@@ -12,5 +12,9 @@ authors.workspace = true
 runtime-core.workspace = true
 lr-shadow.workspace = true
 
+[dev-dependencies]
+gir-ir.workspace = true
+pretty_assertions.workspace = true
+
 [lints]
 workspace = true
