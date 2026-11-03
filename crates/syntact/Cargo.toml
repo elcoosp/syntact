@@ -1,0 +1,21 @@
+[package]
+name = "syntact"
+description = "syntact CLI binary (thin wrapper over crates/cli)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+clap.workspace = true
+cli.workspace = true
+
+
+[[bin]]
+name = "syntact"
+path = "src/main.rs"
+
+[lints]
+workspace = true

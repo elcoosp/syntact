@@ -1,0 +1,16 @@
+[package]
+name = "harness"
+description = "Conformance runner + corpus format + differential testing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+runtime-core.workspace = true
+packs-json.workspace = true
+
+[lints]
+workspace = true

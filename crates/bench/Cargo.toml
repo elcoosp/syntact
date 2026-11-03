@@ -1,0 +1,17 @@
+[package]
+name = "bench"
+description = "Criterion suites and performance budget gates (roadmap §10)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+harness.workspace = true
+runtime-core.workspace = true
+packs-json.workspace = true
+
+[lints]
+workspace = true

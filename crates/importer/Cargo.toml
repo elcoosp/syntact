@@ -1,0 +1,16 @@
+[package]
+name = "importer"
+description = "tree-sitter grammar.js → KDL importer (issue 037)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+gir-syntax.workspace = true
+gir-ir.workspace = true
+
+[lints]
+workspace = true

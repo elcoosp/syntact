@@ -1,0 +1,21 @@
+[package]
+name = "cli"
+description = "syntact CLI — check/build/conflicts/conformance/trace (issue 020)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+clap.workspace = true
+gir-ir.workspace = true
+gir-syntax.workspace = true
+codegen-rust.workspace = true
+lexgen.workspace = true
+harness.workspace = true
+packs-json.workspace = true
+
+[lints]
+workspace = true
