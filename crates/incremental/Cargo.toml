@@ -1,0 +1,15 @@
+[package]
+name = "incremental"
+description = "Incremental reparse engine: reuse, splicing, changed ranges (§7.7)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+runtime-core.workspace = true
+
+[lints]
+workspace = true
