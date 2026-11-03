@@ -13,5 +13,13 @@ harness.workspace = true
 runtime-core.workspace = true
 packs-json.workspace = true
 
+[dev-dependencies]
+criterion.workspace = true
+dhat.workspace = true
+
+[[bench]]
+name = "json"
+harness = false
+
 [lints]
 workspace = true
