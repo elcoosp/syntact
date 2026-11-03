@@ -1,0 +1,16 @@
+[package]
+name = "codegen-rust"
+description = "codegen-rust:Deterministic O(1) Rust table emission (§4.3)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+gir-ir.workspace = true
+gir-analysis.workspace = true
+
+[lints]
+workspace = true
