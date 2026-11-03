@@ -1,0 +1,16 @@
+[package]
+name = "recovery"
+description = "Deterministic cactus-stack repair planner (§7.5)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+runtime-core.workspace = true
+lr-shadow.workspace = true
+
+[lints]
+workspace = true

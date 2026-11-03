@@ -1,0 +1,15 @@
+[package]
+name = "descent"
+description = "Descriptor-driven descent + Pratt backend on the event protocol (§7.4)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+runtime-core.workspace = true
+
+[lints]
+workspace = true
