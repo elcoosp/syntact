@@ -1,0 +1,18 @@
+[package]
+name = "packs-csv"
+description = "Community CSV pack (issue 040)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+runtime-core.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+
+[lints]
+workspace = true
