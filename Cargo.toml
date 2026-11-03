@@ -1,0 +1,104 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/bench",
+    "crates/cli",
+    "crates/codegen-rust",
+    "crates/descent",
+    "crates/gir-analysis",
+    "crates/gir-ir",
+    "crates/gir-syntax",
+    "crates/gir-transform",
+    "crates/harness",
+    "crates/importer",
+    "crates/incremental",
+    "crates/lexgen",
+    "crates/lr-shadow",
+    "crates/lsp",
+    "crates/playground-server",
+    "crates/query",
+    "crates/recovery",
+    "crates/runtime-core",
+    "crates/structural-index",
+    "crates/syntact",
+    "packs/c",
+    "packs/csv",
+    "packs/ini",
+    "packs/json",
+    "packs/markdown",
+    "packs/python",
+    "packs/rust",
+    "packs/sql",
+    "packs/toml",
+    "packs/typescript",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/elcoosp/syntact"
+authors = ["elcoosp"]
+
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Targeted, justified relaxations (see issues/001-workspace-scaffold-and-toolchain.md)
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+multiple_crate_versions = "allow"
+
+[workspace.dependencies]
+# Internal crates (single source of truth for intra-workspace deps)
+gir-ir = { path = "crates/gir-ir" }
+gir-syntax = { path = "crates/gir-syntax" }
+gir-analysis = { path = "crates/gir-analysis" }
+gir-transform = { path = "crates/gir-transform" }
+lr-shadow = { path = "crates/lr-shadow" }
+lexgen = { path = "crates/lexgen" }
+codegen-rust = { path = "crates/codegen-rust" }
+runtime-core = { path = "crates/runtime-core" }
+recovery = { path = "crates/recovery" }
+harness = { path = "crates/harness" }
+packs-json = { path = "packs/json" }
+cli = { path = "crates/cli" }
+descent = { path = "crates/descent" }
+incremental = { path = "crates/incremental" }
+query = { path = "crates/query" }
+structural-index = { path = "crates/structural-index" }
+lsp = { path = "crates/lsp" }
+importer = { path = "crates/importer" }
+playground-server = { path = "crates/playground-server" }
+packs-toml = { path = "packs/toml" }
+packs-typescript = { path = "packs/typescript" }
+packs-python = { path = "packs/python" }
+packs-c = { path = "packs/c" }
+packs-rust = { path = "packs/rust" }
+packs-sql = { path = "packs/sql" }
+packs-ini = { path = "packs/ini" }
+packs-csv = { path = "packs/csv" }
+packs-markdown = { path = "packs/markdown" }
+
+# External
+kdl = "6.7.1"
+thiserror = "2.0.21"
+memchr = "2.8.3"
+simdutf8 = "0.1.5"
+clap = { version = "4.6.7", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+criterion = "0.8.2"
+indexmap = "2.14.2"
+pretty_assertions = "1.4.1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[profile.bench]
+debug = true
