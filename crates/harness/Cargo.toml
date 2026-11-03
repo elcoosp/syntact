@@ -11,6 +11,10 @@ authors.workspace = true
 [dependencies]
 runtime-core.workspace = true
 packs-json.workspace = true
+descent.workspace = true
+gir-ir.workspace = true
+recovery.workspace = true
+lr-shadow.workspace = true
 
 [lints]
 workspace = true
