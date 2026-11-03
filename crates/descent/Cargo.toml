@@ -11,5 +11,9 @@ authors.workspace = true
 [dependencies]
 runtime-core.workspace = true
 
+[dev-dependencies]
+packs-json.workspace = true
+pretty_assertions.workspace = true
+
 [lints]
 workspace = true
