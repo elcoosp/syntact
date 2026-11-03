@@ -10,6 +10,7 @@ authors.workspace = true
 
 [dependencies]
 kdl.workspace = true
+miette.workspace = true
 gir-ir.workspace = true
 thiserror.workspace = true
 
