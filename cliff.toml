@@ -1,0 +1,31 @@
+# git-cliff configuration (issue 003): conventional commits → Keep-a-Changelog.
+[changelog]
+header = "# Changelog\n\nAll notable changes to this project are documented in this file.\n"
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}\
+### {{ group }}\n\
+{% for commit in commits %}\
+- {{ commit.message | upper_first }} ({{ commit.id | truncate(length=7, end="") }})\
+{% endfor %}\n\
+{% endfor %}\
+"""
+trim = true
+footer = ""
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+protect_breaking_commits = true
+tag_pattern = "v[0-9].*"
+sort_commits = "oldest"
+commit_parsers = [
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Bug Fixes" },
+  { message = "^perf", group = "Performance" },
+  { message = "^doc", group = "Documentation" },
+  { message = "^test", group = "Tests" },
+  { message = "^refactor", group = "Refactoring" },
+  { message = "^style", group = "Styling" },
+  { message = "^chore", group = "Miscellaneous" },
+  { message = ".*", group = "Other" },
+]
