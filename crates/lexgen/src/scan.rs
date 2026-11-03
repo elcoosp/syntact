@@ -129,6 +129,37 @@ impl Scanner {
         best
     }
 
+    /// Re-lex exactly one token starting at `offset` — the incremental
+    /// engine's single-token entry point. Semantics are identical to the
+    /// matching step of [`Scanner::scan`]: longest match from `offset`
+    /// (zero-length accepts excluded), or a one-char [`Lexeme::Error`]
+    /// when nothing matches, so a relexed prefix always agrees with a
+    /// full scan of the same text.
+    #[must_use]
+    pub fn relex_one(&self, source: &str, offset: usize) -> Option<Lexeme> {
+        if offset >= source.len() {
+            return None;
+        }
+        if let Some((len, kind)) = self.longest_match(source, offset) {
+            let end = offset + len;
+            return Some(Lexeme::Token {
+                kind,
+                range: u32::try_from(offset).expect("offset fits u32")
+                    ..u32::try_from(end).expect("offset fits u32"),
+                trivia: self.trivia[kind as usize],
+            });
+        }
+        let bytes = source.as_bytes();
+        let mut end = offset + 1;
+        while end < bytes.len() && !source.is_char_boundary(end) {
+            end += 1;
+        }
+        Some(Lexeme::Error {
+            range: u32::try_from(offset).expect("offset fits u32")
+                ..u32::try_from(end).expect("offset fits u32"),
+        })
+    }
+
     /// The number of tokens the scanner knows about.
     #[must_use]
     pub fn token_count(&self) -> usize {
