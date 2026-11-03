@@ -10,7 +10,6 @@ authors.workspace = true
 
 [dependencies]
 gir-ir.workspace = true
-gir-analysis.workspace = true
 
 [lints]
 workspace = true
