@@ -43,6 +43,10 @@ impl TokenSet {
     }
 
     /// The kinds present, ascending.
+    ///
+    /// # Panics
+    /// Never: the set holds at most 192 bits and every set bit maps to
+    /// a `u16` by construction.
     #[must_use]
     pub fn kinds(&self) -> Vec<u16> {
         let mut kinds = Vec::new();
