@@ -208,17 +208,15 @@ pub fn lex_fixture(grammar: &Grammar, source: &str) -> Vec<FixtureToken> {
                 "number"
             }
             _ => {
-                let keyword = [("true", "true"), ("false", "false"), ("null", "null")]
-                    .iter()
-                    .find(|(text, _)| source[pos..].starts_with(text))
-                    .copied();
-                if let Some((text, name)) = keyword {
-                    pos += text.len();
-                    out.push(FixtureToken {
-                        look: look(name),
-                        range: start..pos,
-                    });
-                    continue;
+                for (text, name) in [("true", "true"), ("false", "false"), ("null", "null")] {
+                    if source[pos..].starts_with(text) {
+                        pos += text.len();
+                        out.push(FixtureToken {
+                            look: look(name),
+                            range: start..pos,
+                        });
+                        break;
+                    }
                 }
                 pos += 1; // garbage char: skip (not a fixture token)
                 continue;
@@ -272,12 +270,26 @@ pub fn drive_to_failure(auto: &Automaton, tokens: &[FixtureToken]) -> DriveOutco
             }
         }
     }
-    // All tokens consumed: EOF decides.
-    let state = *stack.last().expect("stack never empty");
-    if matches!(auto.action(state, Look::EOF).copied(), Some(Action::Accept)) {
-        Ok((stack, Vec::new()))
-    } else {
-        Err((stack, Vec::new()))
+    // All tokens consumed: run the EOF lookahead to completion — the
+    // automaton may still owe reductions (e.g. closing the start rule)
+    // before it accepts, and a plain `Accept`-only check misjudged
+    // clean streams as failures.
+    loop {
+        let state = *stack.last().expect("stack never empty");
+        match auto.action(state, Look::EOF).copied() {
+            Some(Action::Reduce(prod)) => {
+                let production = &auto.lowered.productions[prod as usize];
+                stack.truncate(stack.len() - production.symbols.len());
+                let base = *stack.last().expect("stack never empty");
+                let target = auto
+                    .goto(base, production.lhs)
+                    .expect("goto exists for reachable lhs");
+                stack.push(target);
+            }
+            Some(Action::Accept) => return Ok((stack, Vec::new())),
+            // EOF never shifts; no action means a genuine failure.
+            Some(Action::Shift(_)) | None => return Err((stack, Vec::new())),
+        }
     }
 }
 
