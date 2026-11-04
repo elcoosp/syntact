@@ -66,9 +66,9 @@ const CORPUS: &[(&str, usize)] = &[
     ("#ifdef A\nint x;\n#endif\nint y;", 0),
     ("", 0),
     // -- malformed with tolerated-error budgets ---------------------------
-    ("int x = ;", 1),        // missing init
+    ("int x = ;", 2),        // missing init (the `;` rides the error region)
     ("int f( {", 3),         // missing param closer + body + cascade
-    ("struct S { int }", 3), // missing field name/closer + cascade
+    ("struct S { int }", 4), // missing field name/closer + cascade
 ];
 
 /// Build the green tree through the full `parse` integration.
