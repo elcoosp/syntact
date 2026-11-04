@@ -132,7 +132,11 @@ fn json_traces_multiple_regions_ascending() {
     let offsets: Vec<usize> = output.regions.iter().map(|r| r.offset).collect();
     assert_eq!(offsets, [5, 8], "ascending offsets");
     let kinds: Vec<&str> = output.regions.iter().map(|r| r.kind.as_str()).collect();
-    assert_eq!(kinds, ["syntax error", "unexpected lbrack"]);
+    // Both failures are flagged by the pack itself (the stray `[2 `
+    // garbage token and the missing-colon `1`), so both kinds resolve
+    // to the pack's message — the `unexpected <token>` fallback only
+    // fires for offsets no pack diagnostic covers.
+    assert_eq!(kinds, ["syntax error", "syntax error"]);
     for region in &output.regions {
         assert!(
             region.resync >= region.offset,
@@ -174,6 +178,29 @@ fn toml_pack_reports_native_recovery_regions() {
     }
     let clean = trace("toml", TOML_CLEAN).expect("toml trace");
     assert!(clean.ok);
+}
+
+#[test]
+fn toml_back_to_back_errors_get_monotonic_resyncs() {
+    // Regression: `b = [2, , 3]` produces two adjacent error regions
+    // (`[2,` then `3`). The old resume fill only ever patched the last
+    // diag, so the first region kept resync = source length and the
+    // printed resyncs ran backwards (19 then 17). Each region's resync
+    // must be the first token after its own error token: 16 and 17.
+    let source = "a = 1\nb = [2, , 3]\n";
+    let output = trace("toml", source).expect("toml trace");
+    assert!(!output.ok);
+    assert_eq!(output.regions.len(), 2, "regions: {:?}", output.regions);
+    let offsets: Vec<usize> = output.regions.iter().map(|r| r.offset).collect();
+    assert_eq!(offsets, [14, 16], "ascending offsets");
+    let resyncs: Vec<usize> = output.regions.iter().map(|r| r.resync).collect();
+    assert_eq!(resyncs, [16, 17], "monotonic, per-region resyncs");
+    for window in output.regions.windows(2) {
+        assert!(
+            window[1].resync >= window[0].resync,
+            "resyncs never run backwards: {window:?}"
+        );
+    }
 }
 
 #[test]
