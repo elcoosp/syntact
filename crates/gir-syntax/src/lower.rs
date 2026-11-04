@@ -219,7 +219,7 @@ fn escape_name(text: &str) -> String {
 /// Convenience: load KDL text and lower straight to IR.
 ///
 /// # Errors
-/// Anything [`load`] or [`GirDoc::to_grammar`] reports.
+/// Anything [`crate::load`] or [`crate::doc::GirDoc::to_grammar`] reports.
 pub fn load_grammar(text: &str) -> Result<Grammar, SurfaceError> {
     crate::load(text)?.to_grammar()
 }
