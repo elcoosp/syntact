@@ -60,6 +60,15 @@ pub const MAX_REPEAT: u32 = 256;
 pub const SCALAR_END: u32 = 0x11_0000;
 
 /// Parse a token-pattern regex.
+///
+/// # Errors
+/// [`LexError`] with a byte-offset diagnosis for every malformed
+/// pattern (unbalanced groups, bad escapes, oversized repeats).
+///
+/// # Panics
+/// Never on any input: malformed patterns are reported as
+/// [`LexError`]s, and the parser's internal invariants (`pos <= len`,
+/// non-empty branch stacks) are maintained by construction.
 pub fn parse_regex(pattern: &str) -> Result<Regex, LexError> {
     let mut parser = Parser {
         chars: pattern.chars().collect(),
