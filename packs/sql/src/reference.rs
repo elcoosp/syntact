@@ -1,6 +1,7 @@
-//! Hand-written reference parser for the documented SQLite subset
-//! (issue 035): SELECT with joins/subqueries/CTEs, INSERT/UPDATE/
-//! DELETE, CREATE TABLE with constraints, CASE/CAST expressions.
+//! Hand-written reference SQL (SQLite-dialect subset) parser on the
+//! runtime-core event protocol (issue 035). Case-insensitive keywords
+//! with raw text preserved, precedence-climbing expressions, recursive
+//! subqueries, and `--`/`/* */` trivia.
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -11,8 +12,7 @@ use runtime_core::input::Source;
 use runtime_core::sink::{TriviaRecord, drive_sink};
 use runtime_core::tree::{GreenNode, NodeCache, TreeBuilder};
 
-use crate::kinds as nk;
-use crate::lexer::{self, ScanToken};
+use crate::kinds;
 use crate::token_kinds as tk;
 
 /// Diagnostic side-table index meaning "syntax error".
@@ -27,25 +27,23 @@ pub fn error_message(diag: u32) -> &'static str {
     }
 }
 
-/// Parse SQL source into the raw event stream:
-/// `(events, token_ranges, error_count)`.
+/// Parse SQL-subset source into the raw event stream.
 #[allow(clippy::type_complexity)]
 #[must_use]
 pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
-    let scan = lexer::scan(source);
-    let mut parser = Parser::run(source, scan);
-    parser.parse_script();
+    let mut parser = Parser::run(source);
+    parser.parse_program();
     (parser.events, parser.tokens, parser.errors)
 }
 
-/// Parse SQL source into a green tree (one implicit root).
+/// Parse SQL-subset source into a green tree (one implicit
+/// [`crate::ROOT_KIND`] root).
 ///
 /// # Errors
 /// Structural errors propagate as `Err`; syntax errors are recovered.
 pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
-    let scan = lexer::scan(source);
-    let mut parser = Parser::run(source, scan);
-    parser.parse_script();
+    let mut parser = Parser::run(source);
+    parser.parse_program();
     let mut wrapped = Vec::with_capacity(parser.events.len() + 2);
     wrapped.push(Event::Start {
         kind: crate::ROOT_KIND,
@@ -80,1305 +78,1199 @@ pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
     builder.finish()
 }
 
-/// The recursive-descent driver over the scanner feed.
 struct Parser<'s> {
-    source: &'s str,
-    feed: Vec<ScanToken>,
-    trivia: Vec<(Range<u32>, u16, bool)>,
-    pos: usize,
+    bytes: &'s [u8],
+    pos: u32,
+    last_end: u32,
     events: Vec<Event>,
     tokens: Vec<(u16, Range<u32>)>,
+    trivia: Vec<(Range<u32>, u16, bool)>,
     errors: usize,
 }
 
-/// Pratt binding-power rows (`rbp == lbp + 1` left-assoc).
-struct OpRow {
-    token: u16,
-    lbp: u8,
-    rbp: u8,
-    node: u16,
-}
-
-/// The infix table: `OR` lowest, then `AND`, comparisons / `IS` /
-/// `IN` / `LIKE` / `GLOB` / `BETWEEN` (`BETWEEN` handled specially),
-/// `||`, `+ -`, `* / %`.
-const INFIX: &[OpRow] = &[
-    OpRow {
-        token: tk::KW_OR,
-        lbp: 1,
-        rbp: 2,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::KW_AND,
-        lbp: 2,
-        rbp: 3,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::EQ,
-        lbp: 3,
-        rbp: 4,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::NE,
-        lbp: 3,
-        rbp: 4,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::LT,
-        lbp: 3,
-        rbp: 4,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::GT,
-        lbp: 3,
-        rbp: 4,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::LE,
-        lbp: 3,
-        rbp: 4,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::GE,
-        lbp: 3,
-        rbp: 4,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::KW_IS,
-        lbp: 3,
-        rbp: 4,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::KW_LIKE,
-        lbp: 3,
-        rbp: 4,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::KW_GLOB,
-        lbp: 3,
-        rbp: 4,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::CONCAT,
-        lbp: 4,
-        rbp: 5,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::PLUS,
-        lbp: 5,
-        rbp: 6,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::MINUS,
-        lbp: 5,
-        rbp: 6,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::STAR,
-        lbp: 6,
-        rbp: 7,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::SLASH,
-        lbp: 6,
-        rbp: 7,
-        node: nk::BIN_EXPR,
-    },
-    OpRow {
-        token: tk::PERCENT,
-        lbp: 6,
-        rbp: 7,
-        node: nk::BIN_EXPR,
-    },
-];
-
 impl<'s> Parser<'s> {
-    fn run(source: &'s str, scan: lexer::Scan) -> Self {
+    fn run(source: &'s str) -> Self {
         Self {
-            source,
-            feed: scan.tokens,
-            trivia: scan.trivia,
+            bytes: source.as_bytes(),
             pos: 0,
+            last_end: 0,
             events: Vec::new(),
             tokens: Vec::new(),
-            errors: scan.errors,
+            trivia: Vec::new(),
+            errors: 0,
         }
     }
 
-    fn peek(&self) -> Option<u16> {
-        self.feed.get(self.pos).map(|t| t.kind)
+    fn peek(&self) -> Option<u8> {
+        self.bytes.get(self.pos as usize).copied()
     }
 
-    fn peek_at(&self, offset: usize) -> Option<u16> {
-        self.feed.get(self.pos + offset).map(|t| t.kind)
+    fn starts_with(&self, text: &[u8]) -> bool {
+        let start = self.pos as usize;
+        self.bytes.len() >= start + text.len() && &self.bytes[start..start + text.len()] == text
     }
 
-    fn bump(&mut self) -> Option<(u16, Range<u32>)> {
-        let token = self.feed.get(self.pos)?;
-        self.events.push(Event::Token {
-            kind: token.kind,
-            n_raw: 1,
-        });
-        self.tokens.push((token.kind, token.range.clone()));
-        self.pos += 1;
-        Some((token.kind, token.range.clone()))
+    fn at(&self, offset: u32) -> Option<u8> {
+        self.bytes.get(self.pos as usize + offset as usize).copied()
     }
 
-    /// Error + ERROR region; sync = `;` `,` closers and statement
-    /// keywords. Consumes ≥ 1 non-sync token (progress).
-    fn fail_skip(&mut self, start: u32) {
+    /// Case-folded keyword test at the cursor (word-bounded).
+    fn peek_kw(&self, kw: &str) -> bool {
+        let n = kw.len();
+        if self.bytes.len() < self.pos as usize + n {
+            return false;
+        }
+        for (i, k) in kw.bytes().enumerate() {
+            let b = match self.bytes.get(self.pos as usize + i) {
+                Some(b) => *b,
+                None => return false,
+            };
+            if !b.eq_ignore_ascii_case(&k) {
+                return false;
+            }
+        }
+        // Word boundary.
+        match self.at(u32::try_from(n).unwrap_or(u32::MAX)) {
+            None => true,
+            Some(b) => !(b.is_ascii_alphanumeric() || b == b'_'),
+        }
+    }
+
+    fn bump_kw(&mut self, kw: &str) {
+        self.bump(tk::WORD, u32::try_from(kw.len()).unwrap_or(u32::MAX));
+    }
+
+    fn skip_trivia(&mut self) {
+        let mut start = self.pos;
+        let mut kind = tk::WHITESPACE;
+        loop {
+            match self.peek() {
+                Some(b' ' | b'\t' | b'\r' | b'\n' | b'\x0c') => self.pos += 1,
+                Some(b'-') if self.at(1) == Some(b'-') => {
+                    if self.pos > start && kind != tk::COMMENT {
+                        self.push_trivia(start, tk::WHITESPACE, false);
+                        start = self.pos;
+                    }
+                    kind = tk::COMMENT;
+                    while let Some(b) = self.peek() {
+                        if b == b'\n' {
+                            break;
+                        }
+                        self.pos += 1;
+                    }
+                }
+                Some(b'/') if self.at(1) == Some(b'*') => {
+                    if self.pos > start && kind != tk::BLOCK_COMMENT {
+                        self.push_trivia(start, kind, false);
+                        start = self.pos;
+                    }
+                    kind = tk::BLOCK_COMMENT;
+                    self.pos += 2;
+                    while self.pos + 1 < u32::try_from(self.bytes.len()).unwrap_or(u32::MAX) {
+                        if self.peek() == Some(b'*') && self.at(1) == Some(b'/') {
+                            self.pos += 2;
+                            break;
+                        }
+                        self.pos += 1;
+                    }
+                }
+                _ => break,
+            }
+        }
+        if self.pos > start {
+            let trailing = start == self.last_end && self.last_end > 0;
+            self.push_trivia(start, kind, trailing);
+        }
+    }
+
+    fn push_trivia(&mut self, start: u32, kind: u16, trailing: bool) {
+        self.trivia.push((start..self.pos, kind, trailing));
+        self.last_end = self.last_end.max(self.pos);
+    }
+
+    fn bump(&mut self, kind: u16, n: u32) {
+        let start = self.pos;
+        self.pos += n;
+        self.events.push(Event::Token { kind, n_raw: 1 });
+        self.tokens.push((kind, start..self.pos));
+        self.last_end = self.pos;
+    }
+
+    fn wrap_node(&mut self, mark: usize, kind: u16) {
+        self.events.insert(
+            mark,
+            Event::Start {
+                kind,
+                forward_parent: None,
+            },
+        );
+        self.events.push(Event::Finish);
+    }
+
+    fn fail_skip(&mut self, start: u32, consume_stray: bool) {
         self.errors += 1;
         self.events.push(Event::Error { diag: DIAG_SYNTAX });
         self.events.push(Event::Start {
             kind: ERROR_KIND,
             forward_parent: None,
         });
-        let pos0 = self.pos;
-        while let Some(token) = self.feed.get(self.pos) {
-            if Self::is_sync(token.kind) {
+        while let Some(b) = self.peek() {
+            if matches!(b, b';' | b')') {
                 break;
             }
             self.pos += 1;
         }
-        let at_sync = self
-            .feed
-            .get(self.pos)
-            .is_some_and(|t| Self::is_sync(t.kind));
-        if self.pos == pos0 && self.pos < self.feed.len() && !at_sync {
-            self.pos += 1; // a non-sync stray rides the error region
+        if consume_stray && self.pos == start {
+            if let Some(b) = self.peek() {
+                if !matches!(b, b';' | b')') {
+                    self.pos += 1;
+                }
+            }
         }
-        let end = self
-            .feed
-            .get(self.pos.saturating_sub(1))
-            .filter(|_| self.pos > pos0)
-            .map_or(start, |t| t.range.end);
-        if end > start {
-            self.trivia
-                .retain(|(range, _, _)| range.end <= start || range.start >= end);
+        if self.pos > start {
             self.events.push(Event::Token {
                 kind: ERROR_KIND,
                 n_raw: 1,
             });
-            self.tokens.push((ERROR_KIND, start..end));
+            self.tokens.push((ERROR_KIND, start..self.pos));
+            self.last_end = self.pos;
         }
         self.events.push(Event::Finish);
     }
 
-    fn is_sync(kind: u16) -> bool {
-        matches!(
-            kind,
-            tk::SEMI
-                | tk::COMMA
-                | tk::RPAREN
-                | tk::KW_SELECT
-                | tk::KW_INSERT
-                | tk::KW_UPDATE
-                | tk::KW_DELETE
-                | tk::KW_CREATE
-                | tk::KW_FROM
-                | tk::KW_WHERE
-                | tk::KW_GROUP
-                | tk::KW_ORDER
-                | tk::KW_LIMIT
-                | tk::KW_HAVING
-                | tk::KW_SET
-        )
-    }
-
-    /// Recovery that force-consumes one stray token (progress).
-    fn fail_skip_stray(&mut self, start: u32) {
+    fn force_byte(&mut self) {
+        let start = self.pos;
+        if self.peek().is_none() {
+            return;
+        }
+        self.pos += 1;
         self.errors += 1;
         self.events.push(Event::Error { diag: DIAG_SYNTAX });
         self.events.push(Event::Start {
             kind: ERROR_KIND,
             forward_parent: None,
         });
-        let end = self.feed.get(self.pos).map_or(start, |t| t.range.end);
-        if self.pos < self.feed.len() {
-            self.bump();
-            self.trivia
-                .retain(|(range, _, _)| range.end <= start || range.start >= end);
-        }
+        self.events.push(Event::Token {
+            kind: ERROR_KIND,
+            n_raw: 1,
+        });
+        self.tokens.push((ERROR_KIND, start..self.pos));
+        self.last_end = self.pos;
         self.events.push(Event::Finish);
     }
 
-    fn next_start(&self) -> u32 {
-        self.feed
-            .get(self.pos)
-            .map_or(u32::try_from(self.source.len()).unwrap_or(u32::MAX), |t| {
-                t.range.start
-            })
+    // ------------------------------------------------------------------
+    // Scanner pieces
+    // ------------------------------------------------------------------
+
+    fn scan_word_len(&self) -> u32 {
+        let start = self.pos as usize;
+        let mut idx = start;
+        if !self
+            .bytes
+            .get(idx)
+            .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+        {
+            return 0;
+        }
+        idx += 1;
+        while self
+            .bytes
+            .get(idx)
+            .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'$')
+        {
+            idx += 1;
+        }
+        u32::try_from(idx - start).unwrap_or(1)
     }
 
-    // ------------------------------------------------------------------
-    // Script / statements
-    // ------------------------------------------------------------------
-
-    fn parse_script(&mut self) {
-        loop {
-            match self.peek() {
-                None => break,
-                Some(tk::SEMI) => {
-                    self.bump();
+    fn scan_number_len(&self) -> u32 {
+        let start = self.pos as usize;
+        let mut idx = start;
+        while idx < self.bytes.len() && self.bytes[idx].is_ascii_digit() {
+            idx += 1;
+        }
+        if idx < self.bytes.len() && self.bytes[idx] == b'.' {
+            idx += 1;
+            while idx < self.bytes.len() && self.bytes[idx].is_ascii_digit() {
+                idx += 1;
+            }
+        }
+        if idx < self.bytes.len() && matches!(self.bytes[idx], b'e' | b'E') {
+            let mut exp_end = idx + 1;
+            if matches!(self.bytes.get(exp_end), Some(b'+' | b'-')) {
+                exp_end += 1;
+            }
+            if exp_end < self.bytes.len() && self.bytes[exp_end].is_ascii_digit() {
+                idx = exp_end;
+                while idx < self.bytes.len() && self.bytes[idx].is_ascii_digit() {
+                    idx += 1;
                 }
-                _ => self.parse_statement(),
+            }
+        }
+        u32::try_from(idx - start).unwrap_or(1)
+    }
+
+    /// `'…'` with `''` escapes; `None` = unterminated.
+    fn scan_string_len(&self) -> Option<u32> {
+        let start = self.pos as usize;
+        let mut idx = start + 1;
+        loop {
+            match self.bytes.get(idx)? {
+                b'\'' if self.bytes.get(idx + 1) == Some(&b'\'') => idx += 2,
+                b'\'' => return u32::try_from(idx + 1 - start).ok(),
+                b'\n' => return None,
+                _ => idx += 1,
             }
         }
     }
 
+    fn bump_string(&mut self) {
+        if let Some(len) = self.scan_string_len() {
+            self.bump(tk::STRING, len);
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Program / statements
+    // ------------------------------------------------------------------
+
+    fn parse_program(&mut self) {
+        while self.peek().is_some() {
+            self.skip_trivia();
+            if self.peek().is_none() {
+                break;
+            }
+            if self.peek() == Some(b';') {
+                self.bump(tk::SEMI, 1);
+                continue;
+            }
+            let before = self.pos;
+            self.parse_statement();
+            if self.pos == before && self.peek().is_some() {
+                self.force_byte();
+            }
+            self.skip_trivia();
+            if self.peek() == Some(b';') {
+                self.bump(tk::SEMI, 1);
+            }
+        }
+    }
+
+    /// One statement: optional CTE prefix, then the verb.
     fn parse_statement(&mut self) {
-        match self.peek() {
-            Some(tk::KW_SELECT | tk::KW_WITH) => {
-                self.parse_select();
-            }
-            Some(tk::KW_INSERT) => self.parse_insert(),
-            Some(tk::KW_UPDATE) => self.parse_update(),
-            Some(tk::KW_DELETE) => self.parse_delete(),
-            Some(tk::KW_CREATE) => self.parse_create(),
-            Some(tk::LPAREN) => {
-                self.parse_select(); // parenthesized select
-            }
-            _ => {
-                let start = self.next_start();
-                self.fail_skip_stray(start);
-            }
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // SELECT
-    // ------------------------------------------------------------------
-
-    fn parse_select(&mut self) {
+        self.skip_trivia();
+        let mark = self.events.len();
         self.events.push(Event::Start {
-            kind: nk::SELECT_STMT,
+            kind: kinds::STATEMENT,
             forward_parent: None,
         });
-        if self.peek() == Some(tk::KW_WITH) {
-            self.parse_with();
+        self.skip_trivia();
+        // CTE prefix: WITH name AS (…), …
+        if self.peek_kw("with") {
+            self.parse_ctes();
         }
-        if self.peek() == Some(tk::LPAREN) {
-            // Parenthesized select opens its own SUBQUERY.
-            self.bump();
+        self.skip_trivia();
+        if self.peek_kw("select") {
             self.parse_select();
-            if self.peek() == Some(tk::RPAREN) {
-                self.bump();
-            }
-            self.events.push(Event::Finish);
-            return;
-        }
-        if self.peek() == Some(tk::KW_SELECT) {
-            self.bump();
-            if matches!(self.peek(), Some(tk::KW_DISTINCT | tk::KW_ALL)) {
-                self.bump();
-            }
-            self.parse_result_columns();
-            if self.peek() == Some(tk::KW_FROM) {
-                self.parse_from();
-            }
-            if self.peek() == Some(tk::KW_WHERE) {
-                self.events.push(Event::Start {
-                    kind: nk::WHERE_CLAUSE,
-                    forward_parent: None,
-                });
-                self.bump();
-                self.parse_expression(0);
-                self.events.push(Event::Finish);
-            }
-            if self.peek() == Some(tk::KW_GROUP) {
-                self.events.push(Event::Start {
-                    kind: nk::GROUP_BY_CLAUSE,
-                    forward_parent: None,
-                });
-                self.bump();
-                if self.peek() == Some(tk::KW_BY) {
-                    self.bump();
-                }
-                self.parse_expr_list();
-                if self.peek() == Some(tk::KW_HAVING) {
-                    self.bump();
-                    self.parse_expression(0);
-                }
-                self.events.push(Event::Finish);
-            }
-            if self.peek() == Some(tk::KW_ORDER) {
-                self.events.push(Event::Start {
-                    kind: nk::ORDER_BY_CLAUSE,
-                    forward_parent: None,
-                });
-                self.bump();
-                if self.peek() == Some(tk::KW_BY) {
-                    self.bump();
-                }
-                loop {
-                    if !self.parse_expression(0) {
-                        break;
-                    }
-                    if matches!(self.peek(), Some(tk::KW_ASC | tk::KW_DESC)) {
-                        self.bump();
-                    }
-                    if self.peek() == Some(tk::COMMA) {
-                        self.bump();
-                    } else {
-                        break;
-                    }
-                }
-                self.events.push(Event::Finish);
-            }
-            if self.peek() == Some(tk::KW_LIMIT) {
-                self.events.push(Event::Start {
-                    kind: nk::LIMIT_CLAUSE,
-                    forward_parent: None,
-                });
-                self.bump();
-                self.parse_expression(0);
-                if matches!(self.peek(), Some(tk::KW_OFFSET | tk::COMMA)) {
-                    self.bump();
-                    self.parse_expression(0);
-                }
-                self.events.push(Event::Finish);
-            }
-        }
-        // UNION [ALL] chains stay inside the statement node.
-        if self.peek() == Some(tk::KW_UNION) {
-            self.bump();
-            if self.peek() == Some(tk::KW_ALL) {
-                self.bump();
-            }
-            self.parse_select();
+        } else if self.peek_kw("insert") {
+            self.parse_insert();
+        } else if self.peek_kw("update") {
+            self.parse_update();
+        } else if self.peek_kw("delete") {
+            self.parse_delete();
+        } else if self.peek_kw("create") {
+            self.parse_create_table();
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
         }
         self.events.push(Event::Finish);
+        let _ = mark;
     }
 
-    fn parse_with(&mut self) {
+    /// `WITH name AS (select), name2 AS (select)`.
+    fn parse_ctes(&mut self) {
         self.events.push(Event::Start {
-            kind: nk::WITH_CLAUSE,
+            kind: kinds::CTE,
             forward_parent: None,
         });
-        self.bump(); // WITH
+        self.bump_kw("with");
         loop {
-            self.events.push(Event::Start {
-                kind: nk::CTE,
-                forward_parent: None,
-            });
-            if self.peek() == Some(tk::IDENT) {
-                self.bump();
-            } else {
-                let start = self.next_start();
-                self.fail_skip(start);
+            self.skip_trivia();
+            self.bump_word();
+            self.skip_trivia();
+            if self.peek_kw("as") {
+                self.bump_kw("as");
             }
-            if self.peek() == Some(tk::LPAREN) {
-                // Optional column list.
-                self.bump();
-                while !matches!(self.peek(), Some(tk::RPAREN) | None) {
-                    self.bump();
+            self.skip_trivia();
+            if self.peek() == Some(b'(') {
+                self.bump(tk::LPAREN, 1);
+                self.skip_trivia();
+                if self.peek_kw("select") {
+                    self.parse_select();
                 }
-                if self.peek() == Some(tk::RPAREN) {
-                    self.bump();
-                }
-            }
-            if self.peek() == Some(tk::KW_AS) {
-                self.bump();
-            }
-            if self.peek() == Some(tk::LPAREN) {
-                self.bump();
-                self.parse_select();
-                if self.peek() == Some(tk::RPAREN) {
-                    self.bump();
+                self.skip_trivia();
+                if self.peek() == Some(b')') {
+                    self.bump(tk::RPAREN, 1);
                 } else {
-                    let start = self.next_start();
-                    self.fail_skip(start);
+                    let start = self.pos;
+                    self.fail_skip(start, true);
                 }
             }
-            self.events.push(Event::Finish);
-            if self.peek() == Some(tk::COMMA) {
-                self.bump();
-            } else {
-                break;
-            }
-        }
-        self.events.push(Event::Finish);
-    }
-
-    fn parse_result_columns(&mut self) {
-        loop {
-            self.events.push(Event::Start {
-                kind: nk::RESULT_COLUMN,
-                forward_parent: None,
-            });
-            if self.peek() == Some(tk::STAR) {
-                self.bump();
-            } else if self.peek() == Some(tk::IDENT)
-                && self.peek_at(1) == Some(tk::DOT)
-                && self.peek_at(2) == Some(tk::STAR)
-            {
-                self.bump();
-                self.bump();
-                self.bump();
-            } else if Self::starts_expr(self.peek()) {
-                self.parse_expression(0);
-                if self.peek() == Some(tk::KW_AS) {
-                    self.bump();
-                    if self.peek() == Some(tk::IDENT) {
-                        self.bump();
-                    }
-                } else if self.peek() == Some(tk::IDENT) {
-                    // Bare alias.
-                    self.bump();
-                }
-            } else {
-                let start = self.next_start();
-                self.fail_skip(start);
-            }
-            self.events.push(Event::Finish);
-            if self.peek() == Some(tk::COMMA) {
-                self.bump();
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn parse_from(&mut self) {
-        self.events.push(Event::Start {
-            kind: nk::FROM_CLAUSE,
-            forward_parent: None,
-        });
-        self.bump(); // FROM
-        self.parse_table_ref();
-        // Comma joins and JOIN chains.
-        loop {
-            match self.peek() {
-                Some(tk::COMMA) => {
-                    self.bump();
-                    self.parse_table_ref();
-                }
-                Some(
-                    tk::KW_JOIN
-                    | tk::KW_LEFT
-                    | tk::KW_RIGHT
-                    | tk::KW_INNER
-                    | tk::KW_OUTER
-                    | tk::KW_CROSS,
-                ) => {
-                    self.events.push(Event::Start {
-                        kind: nk::JOIN_CLAUSE,
-                        forward_parent: None,
-                    });
-                    // Modifier soup to the JOIN keyword.
-                    while matches!(
-                        self.peek(),
-                        Some(
-                            tk::KW_LEFT | tk::KW_RIGHT | tk::KW_INNER | tk::KW_OUTER | tk::KW_CROSS
-                        )
-                    ) {
-                        self.bump();
-                    }
-                    if self.peek() == Some(tk::KW_JOIN) {
-                        self.bump();
-                    } else {
-                        let start = self.next_start();
-                        self.fail_skip(start);
-                    }
-                    self.parse_table_ref();
-                    if self.peek() == Some(tk::KW_ON) {
-                        self.bump();
-                        self.parse_expression(0);
-                    }
-                    self.events.push(Event::Finish);
-                }
-                _ => break,
-            }
-        }
-        self.events.push(Event::Finish);
-    }
-
-    /// `name [(alias)]` or `( select ) [(alias)]`.
-    fn parse_table_ref(&mut self) {
-        if self.peek() == Some(tk::LPAREN) {
-            self.bump();
-            if matches!(self.peek(), Some(tk::KW_SELECT | tk::KW_WITH)) {
-                self.parse_select();
-            } else {
-                let start = self.next_start();
-                self.fail_skip(start);
-            }
-            if self.peek() == Some(tk::RPAREN) {
-                self.bump();
-            } else {
-                let start = self.next_start();
-                self.fail_skip(start);
-            }
-        } else if self.peek() == Some(tk::IDENT) {
-            self.bump();
-            if self.peek() == Some(tk::DOT) && self.peek_at(1) == Some(tk::IDENT) {
-                self.bump();
-                self.bump();
-            }
-        } else {
-            let start = self.next_start();
-            self.fail_skip(start);
-            return;
-        }
-        // Optional alias: bare IDENT (not a clause keyword).
-        if self.peek() == Some(tk::IDENT) {
-            self.bump();
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // INSERT / UPDATE / DELETE / CREATE
-    // ------------------------------------------------------------------
-
-    fn parse_insert(&mut self) {
-        self.events.push(Event::Start {
-            kind: nk::INSERT_STMT,
-            forward_parent: None,
-        });
-        self.bump(); // INSERT
-        if self.peek() == Some(tk::KW_INTO) {
-            self.bump();
-        }
-        if self.peek() == Some(tk::IDENT) {
-            self.bump();
-        } else {
-            let start = self.next_start();
-            self.fail_skip(start);
-        }
-        if self.peek() == Some(tk::LPAREN) {
-            self.bump();
-            while !matches!(self.peek(), Some(tk::RPAREN) | None) {
-                if self.peek() == Some(tk::IDENT) {
-                    self.bump();
-                } else {
-                    let start = self.next_start();
-                    self.fail_skip(start);
-                    break;
-                }
-                if self.peek() == Some(tk::COMMA) {
-                    self.bump();
-                } else {
-                    break;
-                }
-            }
-            if self.peek() == Some(tk::RPAREN) {
-                self.bump();
-            }
-        }
-        if self.peek() == Some(tk::KW_VALUES) {
-            self.bump();
-            loop {
-                if self.peek() != Some(tk::LPAREN) {
-                    break;
-                }
-                self.bump();
-                self.parse_expr_list();
-                if self.peek() == Some(tk::RPAREN) {
-                    self.bump();
-                } else {
-                    let start = self.next_start();
-                    self.fail_skip(start);
-                }
-                if self.peek() == Some(tk::COMMA) {
-                    self.bump();
-                } else {
-                    break;
-                }
-            }
-        } else {
-            let start = self.next_start();
-            self.fail_skip(start);
-        }
-        self.events.push(Event::Finish);
-    }
-
-    fn parse_update(&mut self) {
-        self.events.push(Event::Start {
-            kind: nk::UPDATE_STMT,
-            forward_parent: None,
-        });
-        self.bump(); // UPDATE
-        if self.peek() == Some(tk::IDENT) {
-            self.bump();
-        } else {
-            let start = self.next_start();
-            self.fail_skip(start);
-        }
-        if self.peek() == Some(tk::KW_SET) {
-            self.bump();
-        } else {
-            let start = self.next_start();
-            self.fail_skip(start);
-        }
-        loop {
-            self.events.push(Event::Start {
-                kind: nk::SET_ASSIGN,
-                forward_parent: None,
-            });
-            if self.peek() == Some(tk::IDENT) {
-                self.bump();
-            } else {
-                let start = self.next_start();
-                self.fail_skip(start);
-            }
-            if self.peek() == Some(tk::EQ) {
-                self.bump();
-            } else {
-                let start = self.next_start();
-                self.fail_skip(start);
-            }
-            self.parse_expression(0);
-            self.events.push(Event::Finish);
-            if self.peek() == Some(tk::COMMA) {
-                self.bump();
-            } else {
-                break;
-            }
-        }
-        if self.peek() == Some(tk::KW_WHERE) {
-            self.events.push(Event::Start {
-                kind: nk::WHERE_CLAUSE,
-                forward_parent: None,
-            });
-            self.bump();
-            self.parse_expression(0);
-            self.events.push(Event::Finish);
-        }
-        self.events.push(Event::Finish);
-    }
-
-    fn parse_delete(&mut self) {
-        self.events.push(Event::Start {
-            kind: nk::DELETE_STMT,
-            forward_parent: None,
-        });
-        self.bump(); // DELETE
-        if self.peek() == Some(tk::KW_FROM) {
-            self.bump();
-        } else {
-            let start = self.next_start();
-            self.fail_skip(start);
-        }
-        if self.peek() == Some(tk::IDENT) {
-            self.bump();
-        } else {
-            let start = self.next_start();
-            self.fail_skip(start);
-        }
-        if self.peek() == Some(tk::KW_WHERE) {
-            self.events.push(Event::Start {
-                kind: nk::WHERE_CLAUSE,
-                forward_parent: None,
-            });
-            self.bump();
-            self.parse_expression(0);
-            self.events.push(Event::Finish);
-        }
-        self.events.push(Event::Finish);
-    }
-
-    fn parse_create(&mut self) {
-        self.events.push(Event::Start {
-            kind: nk::CREATE_TABLE,
-            forward_parent: None,
-        });
-        self.bump(); // CREATE
-        if self.peek() == Some(tk::KW_TABLE) {
-            self.bump();
-        } else {
-            let start = self.next_start();
-            self.fail_skip(start);
-            self.events.push(Event::Finish);
-            return;
-        }
-        if self.peek() == Some(tk::KW_IF) {
-            self.bump();
-            if self.peek() == Some(tk::KW_NOT) {
-                self.bump();
-            }
-            if self.peek() == Some(tk::KW_EXISTS) {
-                self.bump();
-            }
-        }
-        if self.peek() == Some(tk::IDENT) {
-            self.bump();
-            if self.peek() == Some(tk::DOT) && self.peek_at(1) == Some(tk::IDENT) {
-                self.bump();
-                self.bump();
-            }
-        } else {
-            let start = self.next_start();
-            self.fail_skip(start);
-        }
-        if self.peek() == Some(tk::LPAREN) {
-            self.bump();
-            while !matches!(self.peek(), Some(tk::RPAREN) | None) {
-                if matches!(
-                    self.peek(),
-                    Some(tk::KW_PRIMARY | tk::KW_UNIQUE | tk::KW_CHECK | tk::KW_FOREIGN)
-                ) {
-                    self.parse_table_constraint();
-                } else {
-                    self.parse_column_def();
-                }
-                if self.peek() == Some(tk::COMMA) {
-                    self.bump();
-                } else {
-                    break;
-                }
-            }
-            if self.peek() == Some(tk::RPAREN) {
-                self.bump();
-            } else {
-                let start = self.next_start();
-                self.fail_skip(start);
-            }
-        } else {
-            let start = self.next_start();
-            self.fail_skip(start);
-        }
-        self.events.push(Event::Finish);
-    }
-
-    #[allow(clippy::too_many_lines)] // the column grammar is the data
-    fn parse_column_def(&mut self) {
-        self.events.push(Event::Start {
-            kind: nk::COLUMN_DEF,
-            forward_parent: None,
-        });
-        if self.peek() == Some(tk::IDENT) {
-            self.bump();
-        } else {
-            let start = self.next_start();
-            self.fail_skip(start);
-        }
-        // Type name: token soup until a constraint keyword / `,` / `)`.
-        while let Some(kind) = self.peek() {
-            if matches!(kind, tk::IDENT | tk::INT_LIT | tk::LPAREN | tk::RPAREN)
-                && !Self::is_constraint_kw(kind)
-            {
-                if kind == tk::LPAREN {
-                    // e.g. VARCHAR(10)
-                    self.bump();
-                    while !matches!(self.peek(), Some(tk::RPAREN) | None) {
-                        self.bump();
-                    }
-                    if self.peek() == Some(tk::RPAREN) {
-                        self.bump();
-                    }
-                    continue;
-                }
-                if kind == tk::RPAREN {
-                    break;
-                }
-                self.bump();
-            } else {
-                break;
-            }
-        }
-        // Column constraints.
-        loop {
-            match self.peek() {
-                Some(tk::KW_PRIMARY) => {
-                    self.bump();
-                    if self.peek() == Some(tk::KW_KEY) {
-                        self.bump();
-                    }
-                    if self.peek() == Some(tk::KW_AUTOINCREMENT) {
-                        self.bump();
-                    }
-                }
-                Some(tk::KW_NOT) => {
-                    self.bump();
-                    if self.peek() == Some(tk::KW_NULL) {
-                        self.bump();
-                    }
-                }
-                Some(tk::KW_NULL | tk::KW_UNIQUE) => {
-                    self.bump();
-                }
-                Some(tk::KW_DEFAULT) => {
-                    self.bump();
-                    if Self::starts_expr(self.peek()) {
-                        self.parse_expression(0);
-                    } else if self.peek() == Some(tk::LPAREN) {
-                        self.bump();
-                        self.parse_expression(0);
-                        if self.peek() == Some(tk::RPAREN) {
-                            self.bump();
-                        }
-                    }
-                }
-                Some(tk::KW_CHECK) => {
-                    self.bump();
-                    if self.peek() == Some(tk::LPAREN) {
-                        self.bump();
-                        self.parse_expression(0);
-                        if self.peek() == Some(tk::RPAREN) {
-                            self.bump();
-                        }
-                    }
-                }
-                Some(tk::KW_REFERENCES) => {
-                    self.bump();
-                    if self.peek() == Some(tk::IDENT) {
-                        self.bump();
-                    }
-                    if self.peek() == Some(tk::LPAREN) {
-                        self.bump();
-                        while !matches!(self.peek(), Some(tk::RPAREN) | None) {
-                            self.bump();
-                        }
-                        if self.peek() == Some(tk::RPAREN) {
-                            self.bump();
-                        }
-                    }
-                }
-                _ => break,
-            }
-        }
-        self.events.push(Event::Finish);
-    }
-
-    fn is_constraint_kw(kind: u16) -> bool {
-        matches!(
-            kind,
-            tk::KW_PRIMARY
-                | tk::KW_NOT
-                | tk::KW_NULL
-                | tk::KW_UNIQUE
-                | tk::KW_DEFAULT
-                | tk::KW_CHECK
-                | tk::KW_REFERENCES
-        )
-    }
-
-    fn parse_table_constraint(&mut self) {
-        self.events.push(Event::Start {
-            kind: nk::TABLE_CONSTRAINT,
-            forward_parent: None,
-        });
-        // Constraint soup to the matching close or `,`.
-        let mut depth = 0_usize;
-        while let Some(kind) = self.peek() {
-            if kind == tk::LPAREN {
-                depth += 1;
-            }
-            if kind == tk::RPAREN {
-                if depth == 0 {
-                    break;
-                }
-                depth -= 1;
-                self.bump();
-                if depth == 0 {
-                    continue;
-                }
-                continue;
-            }
-            if depth == 0 && matches!(kind, tk::COMMA) {
-                break;
-            }
-            self.bump();
-        }
-        self.events.push(Event::Finish);
-    }
-
-    // ------------------------------------------------------------------
-    // Expressions (Pratt)
-    // ------------------------------------------------------------------
-
-    fn parse_expr_list(&mut self) {
-        loop {
-            if !Self::starts_expr(self.peek()) {
-                break;
-            }
-            self.parse_expression(0);
-            if self.peek() == Some(tk::COMMA) {
-                self.bump();
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn starts_expr(kind: Option<u16>) -> bool {
-        matches!(
-            kind,
-            Some(
-                tk::IDENT
-                    | tk::INT_LIT
-                    | tk::FLOAT_LIT
-                    | tk::STRING_LIT
-                    | tk::LPAREN
-                    | tk::MINUS
-                    | tk::PLUS
-                    | tk::KW_NOT
-                    | tk::KW_NULL
-                    | tk::KW_CAST
-                    | tk::KW_CASE
-                    | tk::KW_EXISTS
-                    | tk::STAR
-            )
-        )
-    }
-
-    #[allow(clippy::too_many_lines)] // the expression grammar is the data
-    fn parse_expression(&mut self, min_bp: u8) -> bool {
-        if !self.parse_prefix() {
-            return false;
-        }
-        while let Some(kind) = self.peek() {
-            // `NOT IN / NOT LIKE / NOT GLOB / NOT BETWEEN`.
-            if kind == tk::KW_NOT
-                && matches!(
-                    self.peek_at(1),
-                    Some(tk::KW_IN | tk::KW_LIKE | tk::KW_GLOB | tk::KW_BETWEEN)
-                )
-            {
-                if 3 < min_bp {
-                    break;
-                }
-                self.events.push(Event::Start {
-                    kind: nk::BIN_EXPR,
-                    forward_parent: None,
-                });
-                self.bump(); // NOT
-                self.bump(); // op
-                if !self.parse_match_rhs(kind) {
-                    self.events.pop();
-                    break;
-                }
-                self.events.push(Event::Finish);
-                continue;
-            }
-            if kind == tk::KW_IN {
-                if 3 < min_bp {
-                    break;
-                }
-                self.events.push(Event::Start {
-                    kind: nk::BIN_EXPR,
-                    forward_parent: None,
-                });
-                self.bump();
-                if !self.parse_in_rhs() {
-                    self.events.pop();
-                    break;
-                }
-                self.events.push(Event::Finish);
-                continue;
-            }
-            if kind == tk::KW_BETWEEN {
-                if 3 < min_bp {
-                    break;
-                }
-                self.events.push(Event::Start {
-                    kind: nk::BIN_EXPR,
-                    forward_parent: None,
-                });
-                self.bump();
-                // Lower bound above `AND`; then the joining `AND`.
-                if !self.parse_expression(3) {
-                    self.events.pop();
-                    break;
-                }
-                if self.peek() == Some(tk::KW_AND) {
-                    self.bump();
-                }
-                if !self.parse_expression(3) {
-                    let start = self.next_start();
-                    self.fail_skip(start);
-                }
-                self.events.push(Event::Finish);
-                continue;
-            }
-            if kind == tk::KW_IS {
-                if 3 < min_bp {
-                    break;
-                }
-                self.events.push(Event::Start {
-                    kind: nk::BIN_EXPR,
-                    forward_parent: None,
-                });
-                self.bump();
-                if self.peek() == Some(tk::KW_NOT) {
-                    self.bump();
-                }
-                if !self.parse_expression(4) {
-                    let start = self.next_start();
-                    self.fail_skip(start);
-                }
-                self.events.push(Event::Finish);
-                continue;
-            }
-            if let Some(row) = INFIX.iter().find(|row| row.token == kind) {
-                if row.lbp < min_bp {
-                    break;
-                }
-                self.events.push(Event::Start {
-                    kind: row.node,
-                    forward_parent: None,
-                });
-                self.bump();
-                if !self.parse_expression(row.rbp) {
-                    self.events.pop();
-                    break;
-                }
-                self.events.push(Event::Finish);
+            self.skip_trivia();
+            if self.peek() == Some(b',') {
+                self.bump(tk::COMMA, 1);
                 continue;
             }
             break;
         }
-        true
+        self.events.push(Event::Finish);
     }
 
-    /// The rhs of `IN`: `(select)`, `(e, …)` or a bare table name.
-    fn parse_in_rhs(&mut self) -> bool {
-        if self.peek() == Some(tk::LPAREN) {
-            self.bump();
-            if matches!(self.peek(), Some(tk::KW_SELECT | tk::KW_WITH)) {
+    /// `SELECT [DISTINCT] items [FROM sources] [WHERE …] [GROUP BY …]
+    /// [HAVING …] [ORDER BY …] [LIMIT …]`.
+    #[allow(clippy::too_many_lines)]
+    fn parse_select(&mut self) {
+        self.events.push(Event::Start {
+            kind: kinds::SELECT,
+            forward_parent: None,
+        });
+        self.bump_kw("select");
+        self.skip_trivia();
+        if self.peek_kw("distinct") {
+            self.bump_kw("distinct");
+            self.skip_trivia();
+        }
+        // Select items.
+        loop {
+            self.skip_trivia();
+            self.parse_select_item();
+            self.skip_trivia();
+            if self.peek() == Some(b',') {
+                self.bump(tk::COMMA, 1);
+                continue;
+            }
+            break;
+        }
+        // FROM + joins.
+        if self.peek_kw("from") {
+            self.bump_kw("from");
+            self.skip_trivia();
+            self.parse_source();
+            // Comma-separated sources: `FROM a, b`.
+            loop {
+                self.skip_trivia();
+                if self.peek() == Some(b',') {
+                    self.bump(tk::COMMA, 1);
+                    self.skip_trivia();
+                    self.parse_source();
+                    continue;
+                }
+                break;
+            }
+            loop {
+                self.skip_trivia();
+                if self.peek_kw("join")
+                    || self.peek_kw("inner")
+                    || self.peek_kw("left")
+                    || self.peek_kw("cross")
+                {
+                    if self.peek_kw("inner") || self.peek_kw("left") || self.peek_kw("cross") {
+                        self.bump_kw(if self.peek_kw("inner") {
+                            "inner"
+                        } else if self.peek_kw("left") {
+                            "left"
+                        } else {
+                            "cross"
+                        });
+                        self.skip_trivia();
+                        if self.peek_kw("outer") {
+                            self.bump_kw("outer");
+                            self.skip_trivia();
+                        }
+                        if self.peek_kw("join") {
+                            self.bump_kw("join");
+                        }
+                    } else {
+                        self.bump_kw("join");
+                    }
+                    self.skip_trivia();
+                    self.parse_source();
+                    self.skip_trivia();
+                    if self.peek_kw("on") {
+                        self.parse_clause("on");
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        for clause in ["where", "group", "having", "order", "limit"] {
+            self.skip_trivia();
+            if self.peek_kw(clause) {
+                self.parse_clause(clause);
+            }
+        }
+        self.events.push(Event::Finish);
+    }
+
+    /// One named clause: the keyword + its expression list.
+    fn parse_clause(&mut self, keyword: &str) {
+        self.events.push(Event::Start {
+            kind: kinds::CLAUSE,
+            forward_parent: None,
+        });
+        self.bump_kw(keyword);
+        loop {
+            self.skip_trivia();
+            // `GROUP`/`ORDER` continue into `BY`.
+            if self.peek_kw("by") {
+                self.bump_kw("by");
+                self.skip_trivia();
+            }
+            if matches!(self.peek(), None | Some(b';')) || self.next_clause_ahead() {
+                break;
+            }
+            self.parse_expr_bp(0);
+            self.skip_trivia();
+            // ORDER BY direction suffixes come after each expression.
+            if self.peek_kw("asc") || self.peek_kw("desc") {
+                self.bump_kw(if self.peek_kw("asc") { "asc" } else { "desc" });
+                self.skip_trivia();
+            }
+            if self.peek() == Some(b',') {
+                self.bump(tk::COMMA, 1);
+                continue;
+            }
+            break;
+        }
+        self.events.push(Event::Finish);
+    }
+
+    /// Whether a following clause keyword starts here (end of the
+    /// current clause's expression list).
+    fn next_clause_ahead(&self) -> bool {
+        self.peek_kw("from")
+            || self.peek_kw("where")
+            || self.peek_kw("group")
+            || self.peek_kw("having")
+            || self.peek_kw("order")
+            || self.peek_kw("limit")
+            || self.peek_kw("inner")
+            || self.peek_kw("left")
+            || self.peek_kw("cross")
+            || self.peek_kw("join")
+    }
+
+    /// A FROM/JOIN source: `table [AS] alias`, `(subquery) [AS] alias`.
+    fn parse_source(&mut self) {
+        self.events.push(Event::Start {
+            kind: kinds::SOURCE,
+            forward_parent: None,
+        });
+        self.skip_trivia();
+        if self.peek() == Some(b'(') {
+            self.bump(tk::LPAREN, 1);
+            self.skip_trivia();
+            if self.peek_kw("select") {
                 self.events.push(Event::Start {
-                    kind: nk::SUBQUERY,
+                    kind: kinds::SUBQUERY,
                     forward_parent: None,
                 });
                 self.parse_select();
                 self.events.push(Event::Finish);
+            }
+            self.skip_trivia();
+            if self.peek() == Some(b')') {
+                self.bump(tk::RPAREN, 1);
             } else {
-                self.parse_expr_list();
+                let start = self.pos;
+                self.fail_skip(start, true);
             }
-            if self.peek() == Some(tk::RPAREN) {
-                self.bump();
-            } else {
-                let start = self.next_start();
-                self.fail_skip(start);
-            }
-            true
-        } else if self.peek() == Some(tk::IDENT) {
-            self.bump();
-            true
         } else {
-            let start = self.next_start();
-            self.fail_skip(start);
-            false
+            self.bump_word();
+            self.skip_trivia();
+            if self.peek() == Some(b'.') {
+                self.bump(tk::DOT, 1);
+                self.skip_trivia();
+                self.bump_word();
+                self.skip_trivia();
+            }
         }
+        self.skip_trivia();
+        if self.peek_kw("as") {
+            self.bump_kw("as");
+            self.skip_trivia();
+            self.bump_word();
+        } else if !self.next_clause_ahead() && !self.peek_kw("on") && self.scan_word_len() > 0 {
+            self.bump_word(); // bare alias
+        }
+        self.events.push(Event::Finish);
     }
 
-    /// The rhs of `LIKE` / `GLOB` / `NOT LIKE` / … (plain expr).
-    fn parse_match_rhs(&mut self, op: u16) -> bool {
-        let _ = op;
-        if Self::starts_expr(self.peek()) {
-            self.parse_expression(3)
-        } else {
-            let start = self.next_start();
-            self.fail_skip(start);
-            false
-        }
-    }
-
-    fn parse_prefix(&mut self) -> bool {
-        let Some(kind) = self.peek() else {
-            return false;
-        };
-        match kind {
-            tk::MINUS | tk::PLUS | tk::KW_NOT => {
-                self.events.push(Event::Start {
-                    kind: nk::UNARY_EXPR,
-                    forward_parent: None,
-                });
-                self.bump();
-                let operand_bp = if kind == tk::KW_NOT { 2 } else { 7 };
-                if !self.parse_expression(operand_bp) {
-                    self.events.pop();
-                    return false;
-                }
-                self.events.push(Event::Finish);
-                true
-            }
-            tk::KW_CASE => {
-                self.parse_case();
-                true
-            }
-            tk::KW_CAST => {
-                self.parse_cast();
-                true
-            }
-            tk::LPAREN => {
-                // Subquery or grouped expr/list.
-                if matches!(self.peek_at(1), Some(tk::KW_SELECT | tk::KW_WITH)) {
-                    self.events.push(Event::Start {
-                        kind: nk::SUBQUERY,
-                        forward_parent: None,
-                    });
-                    self.bump();
-                    self.parse_select();
-                    if self.peek() == Some(tk::RPAREN) {
-                        self.bump();
-                    } else {
-                        let start = self.next_start();
-                        self.fail_skip(start);
-                    }
-                    self.events.push(Event::Finish);
-                    return true;
-                }
-                self.events.push(Event::Start {
-                    kind: nk::EXPR_LIST,
-                    forward_parent: None,
-                });
-                self.bump();
-                if self.peek() != Some(tk::RPAREN) {
-                    self.parse_expr_list();
-                }
-                if self.peek() == Some(tk::RPAREN) {
-                    self.bump();
-                } else {
-                    let start = self.next_start();
-                    self.fail_skip(start);
-                }
-                self.events.push(Event::Finish);
-                true
-            }
-            _ => self.parse_atom(),
-        }
-    }
-
-    fn parse_case(&mut self) {
+    /// One select item: `*`, `t.*`, `expr [AS] alias`.
+    fn parse_select_item(&mut self) {
         self.events.push(Event::Start {
-            kind: nk::CASE_EXPR,
+            kind: kinds::SELECT_ITEM,
             forward_parent: None,
         });
-        self.bump(); // CASE
-        if self.peek() != Some(tk::KW_WHEN) {
-            // Operand form: CASE e WHEN …
-            self.parse_expression(0);
+        self.skip_trivia();
+        // `SELECT FROM t` — no items at all: one tolerated error.
+        if self.next_clause_ahead() {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            self.events.push(Event::Finish);
+            return;
         }
-        while self.peek() == Some(tk::KW_WHEN) {
+        if self.peek() == Some(b'*') {
             self.events.push(Event::Start {
-                kind: nk::WHEN_ARM,
+                kind: kinds::STAR,
                 forward_parent: None,
             });
-            self.bump();
-            self.parse_expression(0);
-            if self.peek() == Some(tk::KW_THEN) {
-                self.bump();
-            } else {
-                let start = self.next_start();
-                self.fail_skip(start);
+            self.bump(tk::STAR, 1);
+            self.events.push(Event::Finish);
+        } else {
+            self.parse_expr_bp(0);
+            self.skip_trivia();
+            if self.peek() == Some(b'.') {
+                // `t.*`
+                self.bump(tk::DOT, 1);
+                self.skip_trivia();
+                if self.peek() == Some(b'*') {
+                    self.bump(tk::STAR, 1);
+                } else {
+                    self.bump_word();
+                }
             }
-            self.parse_expression(0);
+        }
+        self.skip_trivia();
+        if self.peek_kw("as") {
+            self.events.push(Event::Start {
+                kind: kinds::ALIAS,
+                forward_parent: None,
+            });
+            self.bump_kw("as");
+            self.skip_trivia();
+            self.bump_word();
+            self.events.push(Event::Finish);
+        } else if self.scan_word_len() > 0 && !self.next_clause_ahead() {
+            self.events.push(Event::Start {
+                kind: kinds::ALIAS,
+                forward_parent: None,
+            });
+            self.bump_word();
             self.events.push(Event::Finish);
         }
-        if self.peek() == Some(tk::KW_ELSE) {
-            self.bump();
-            self.parse_expression(0);
-        }
-        if self.peek() == Some(tk::KW_END) {
-            self.bump();
-        } else {
-            let start = self.next_start();
-            self.fail_skip(start);
-        }
         self.events.push(Event::Finish);
     }
 
-    fn parse_cast(&mut self) {
+    /// `INSERT INTO t [(cols)] VALUES (…), …`.
+    fn parse_insert(&mut self) {
         self.events.push(Event::Start {
-            kind: nk::CAST_EXPR,
+            kind: kinds::INSERT,
             forward_parent: None,
         });
-        self.bump(); // CAST
-        if self.peek() == Some(tk::LPAREN) {
-            self.bump();
-            self.parse_expression(0);
-            if self.peek() == Some(tk::KW_AS) {
-                self.bump();
-            } else {
-                let start = self.next_start();
-                self.fail_skip(start);
+        self.bump_kw("insert");
+        self.skip_trivia();
+        if self.peek_kw("into") {
+            self.bump_kw("into");
+        }
+        self.skip_trivia();
+        self.bump_word();
+        self.skip_trivia();
+        if self.peek() == Some(b'(') {
+            self.bump(tk::LPAREN, 1);
+            loop {
+                self.skip_trivia();
+                if self.peek() == Some(b')') || self.peek().is_none() {
+                    break;
+                }
+                self.bump_word();
+                self.skip_trivia();
+                if self.peek() == Some(b',') {
+                    self.bump(tk::COMMA, 1);
+                    continue;
+                }
+                break;
             }
-            // Type name soup.
-            while matches!(self.peek(), Some(tk::IDENT)) {
-                self.bump();
-                if self.peek() == Some(tk::LPAREN) {
-                    self.bump();
-                    while !matches!(self.peek(), Some(tk::RPAREN) | None) {
-                        self.bump();
+            self.skip_trivia();
+            if self.peek() == Some(b')') {
+                self.bump(tk::RPAREN, 1);
+            } else {
+                let start = self.pos;
+                self.fail_skip(start, true);
+            }
+            self.skip_trivia();
+        }
+        if self.peek_kw("values") {
+            self.events.push(Event::Start {
+                kind: kinds::CLAUSE,
+                forward_parent: None,
+            });
+            self.bump_kw("values");
+            self.skip_trivia();
+            if self.peek() != Some(b'(') {
+                // `VALUES;` — at least one row is required.
+                let start = self.pos;
+                self.fail_skip(start, true);
+            }
+            loop {
+                self.skip_trivia();
+                if self.peek() == Some(b'(') {
+                    self.bump(tk::LPAREN, 1);
+                    loop {
+                        self.skip_trivia();
+                        if self.peek() == Some(b')') || self.peek().is_none() {
+                            break;
+                        }
+                        self.parse_expr_bp(0);
+                        self.skip_trivia();
+                        if self.peek() == Some(b',') {
+                            self.bump(tk::COMMA, 1);
+                            continue;
+                        }
+                        break;
                     }
-                    if self.peek() == Some(tk::RPAREN) {
-                        self.bump();
+                    self.skip_trivia();
+                    if self.peek() == Some(b')') {
+                        self.bump(tk::RPAREN, 1);
+                    } else {
+                        let start = self.pos;
+                        self.fail_skip(start, true);
                     }
                 }
+                self.skip_trivia();
+                if self.peek() == Some(b',') {
+                    self.bump(tk::COMMA, 1);
+                    continue;
+                }
+                break;
             }
-            if self.peek() == Some(tk::RPAREN) {
-                self.bump();
-            } else {
-                let start = self.next_start();
-                self.fail_skip(start);
-            }
-        } else {
-            let start = self.next_start();
-            self.fail_skip(start);
+            self.events.push(Event::Finish);
         }
         self.events.push(Event::Finish);
     }
 
-    fn parse_atom(&mut self) -> bool {
-        let Some(kind) = self.peek() else {
-            return false;
-        };
-        match kind {
-            tk::IDENT | tk::INT_LIT | tk::FLOAT_LIT | tk::STRING_LIT | tk::KW_NULL => {
-                self.bump();
-                // Qualified `t.c` / function call `f(…)`.
-                loop {
-                    if self.peek() == Some(tk::DOT) && matches!(self.peek_at(1), Some(tk::IDENT)) {
-                        self.bump();
-                        self.bump();
-                        continue;
-                    }
-                    if self.peek() == Some(tk::LPAREN) {
-                        self.events.push(Event::Start {
-                            kind: nk::CALL_EXPR,
-                            forward_parent: None,
-                        });
-                        self.bump();
-                        if self.peek() == Some(tk::STAR) {
-                            self.bump();
-                        } else if self.peek() != Some(tk::RPAREN) {
-                            if self.peek() == Some(tk::KW_DISTINCT) {
-                                self.bump();
-                            }
-                            self.parse_expr_list();
-                        }
-                        if self.peek() == Some(tk::RPAREN) {
-                            self.bump();
-                        } else {
-                            let start = self.next_start();
-                            self.fail_skip(start);
-                        }
-                        self.events.push(Event::Finish);
-                        continue;
-                    }
+    /// `UPDATE t SET c = e, … [WHERE …]`.
+    fn parse_update(&mut self) {
+        self.events.push(Event::Start {
+            kind: kinds::UPDATE,
+            forward_parent: None,
+        });
+        self.bump_kw("update");
+        self.skip_trivia();
+        self.bump_word();
+        self.skip_trivia();
+        if self.peek_kw("set") {
+            self.events.push(Event::Start {
+                kind: kinds::CLAUSE,
+                forward_parent: None,
+            });
+            self.bump_kw("set");
+            loop {
+                self.skip_trivia();
+                if self.next_clause_ahead() || self.peek().is_none() {
                     break;
                 }
-                true
+                self.events.push(Event::Start {
+                    kind: kinds::ALIAS,
+                    forward_parent: None,
+                });
+                self.bump_word();
+                self.skip_trivia();
+                if self.peek() == Some(b'=') {
+                    self.bump(tk::EQUALS, 1);
+                    self.skip_trivia();
+                    self.parse_expr_bp(1);
+                }
+                self.events.push(Event::Finish);
+                self.skip_trivia();
+                if self.peek() == Some(b',') {
+                    self.bump(tk::COMMA, 1);
+                    continue;
+                }
+                break;
             }
-            // Bare `*` only valid as a result column — the caller
-            // handled it; inside expressions it is an error.
-            _ => false,
+            self.events.push(Event::Finish);
+        }
+        self.skip_trivia();
+        if self.peek_kw("where") {
+            self.parse_clause("where");
+        }
+        self.events.push(Event::Finish);
+    }
+
+    /// `DELETE FROM t [WHERE …]`.
+    fn parse_delete(&mut self) {
+        self.events.push(Event::Start {
+            kind: kinds::DELETE,
+            forward_parent: None,
+        });
+        self.bump_kw("delete");
+        self.skip_trivia();
+        if self.peek_kw("from") {
+            self.parse_clause("from");
+        }
+        self.skip_trivia();
+        if self.peek_kw("where") {
+            self.parse_clause("where");
+        }
+        self.events.push(Event::Finish);
+    }
+
+    /// `CREATE TABLE t (col constraints, …)`.
+    #[allow(clippy::too_many_lines)]
+    fn parse_create_table(&mut self) {
+        self.events.push(Event::Start {
+            kind: kinds::CREATE_TABLE,
+            forward_parent: None,
+        });
+        self.bump_kw("create");
+        self.skip_trivia();
+        if self.peek_kw("table") {
+            self.bump_kw("table");
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            self.events.push(Event::Finish);
+            return;
+        }
+        self.skip_trivia();
+        self.bump_word();
+        self.skip_trivia();
+        if self.peek() == Some(b'(') {
+            self.bump(tk::LPAREN, 1);
+            loop {
+                self.skip_trivia();
+                match self.peek() {
+                    Some(b')') | None => break,
+                    _ => {}
+                }
+                self.events.push(Event::Start {
+                    kind: kinds::COLUMN_DEF,
+                    forward_parent: None,
+                });
+                self.bump_word();
+                self.skip_trivia();
+                // Column type words + constraints ride WORD tokens.
+                loop {
+                    self.skip_trivia();
+                    if self.scan_word_len() == 0 {
+                        break;
+                    }
+                    self.bump_word();
+                    self.skip_trivia();
+                    if self.peek() == Some(b'(') {
+                        self.bump(tk::LPAREN, 1);
+                        loop {
+                            self.skip_trivia();
+                            if self.peek() == Some(b')') || self.peek().is_none() {
+                                break;
+                            }
+                            if self.scan_number_len() > 0 {
+                                let n = self.scan_number_len();
+                                self.bump(tk::NUMBER, n);
+                            } else {
+                                self.bump_word();
+                            }
+                            self.skip_trivia();
+                            if self.peek() == Some(b',') {
+                                self.bump(tk::COMMA, 1);
+                                continue;
+                            }
+                            break;
+                        }
+                        self.skip_trivia();
+                        if self.peek() == Some(b')') {
+                            self.bump(tk::RPAREN, 1);
+                        }
+                        self.skip_trivia();
+                    }
+                    if self.peek() == Some(b',') || self.peek() == Some(b')') {
+                        break;
+                    }
+                }
+                self.events.push(Event::Finish);
+                self.skip_trivia();
+                if self.peek() == Some(b',') {
+                    self.bump(tk::COMMA, 1);
+                    continue;
+                }
+                break;
+            }
+            self.skip_trivia();
+            if self.peek() == Some(b')') {
+                self.bump(tk::RPAREN, 1);
+            } else {
+                let start = self.pos;
+                self.fail_skip(start, true);
+            }
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+        }
+        self.events.push(Event::Finish);
+    }
+
+    fn bump_word(&mut self) {
+        let n = self.scan_word_len();
+        if n > 0 {
+            self.bump(tk::WORD, n);
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
         }
     }
+
+    // ------------------------------------------------------------------
+    // Expressions — precedence climbing
+    // ------------------------------------------------------------------
+
+    fn parse_expr_bp(&mut self, min_bp: u8) {
+        let mark = self.events.len();
+        if let Some((kw, rbp)) = self.peek_unary_kw() {
+            self.bump_kw(kw);
+            self.skip_trivia();
+            self.parse_expr_bp(rbp);
+            self.wrap_node(mark, kinds::UNARY);
+        } else if let Some((kind, n, rbp)) = self.peek_unary() {
+            self.bump(kind, n);
+            self.skip_trivia();
+            self.parse_expr_bp(rbp);
+            self.wrap_node(mark, kinds::UNARY);
+        } else {
+            self.parse_atom();
+        }
+        self.skip_trivia();
+        self.parse_binops(mark, min_bp);
+        self.skip_trivia();
+    }
+
+    /// Keyword unary operators.
+    fn peek_unary_kw(&self) -> Option<(&'static str, u8)> {
+        if self.peek_kw("not") {
+            Some(("not", 5))
+        } else {
+            None
+        }
+    }
+
+    /// Symbol unary operators.
+    fn peek_unary(&self) -> Option<(u16, u32, u8)> {
+        match self.peek() {
+            Some(b'-') if !self.starts_with(b"--") => Some((tk::MINUS, 1, 7)),
+            Some(b'+') if !self.starts_with(b"+") || self.scan_word_len() == 0 => {
+                if self.peek() == Some(b'+') {
+                    Some((tk::PLUS, 1, 7))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// The binary table: OR(1) AND(2) comparisons(3) IN/LIKE/BETWEEN(3)
+    /// +(4) -(4) *(5) /(5) %(5) ||(5).
+    fn parse_binops(&mut self, mark: usize, min_bp: u8) {
+        while let Some((lbp, rbp, kind)) = self.peek_binop() {
+            if lbp < min_bp {
+                break;
+            }
+            match kind {
+                BinOpKind::Word(kw) => self.bump_kw(kw),
+                BinOpKind::Punct(kind16) => self.bump(kind16, self.punct_len()),
+            }
+            self.skip_trivia();
+            // `IN (…)` / `BETWEEN a AND b` wrappers.
+            if let BinOpKind::Word(kw) = kind {
+                if kw.eq_ignore_ascii_case("in") && self.peek() == Some(b'(') {
+                    self.events.push(Event::Start {
+                        kind: kinds::IN_LIST,
+                        forward_parent: None,
+                    });
+                    self.bump(tk::LPAREN, 1);
+                    loop {
+                        self.skip_trivia();
+                        if self.peek_kw("select") {
+                            self.events.push(Event::Start {
+                                kind: kinds::SUBQUERY,
+                                forward_parent: None,
+                            });
+                            self.parse_select();
+                            self.events.push(Event::Finish);
+                        } else if self.peek() == Some(b')') || self.peek().is_none() {
+                            break;
+                        } else {
+                            self.parse_expr_bp(0);
+                        }
+                        self.skip_trivia();
+                        if self.peek() == Some(b',') {
+                            self.bump(tk::COMMA, 1);
+                            continue;
+                        }
+                        break;
+                    }
+                    self.skip_trivia();
+                    if self.peek() == Some(b')') {
+                        self.bump(tk::RPAREN, 1);
+                    } else {
+                        let start = self.pos;
+                        self.fail_skip(start, true);
+                    }
+                    self.events.push(Event::Finish);
+                    self.wrap_node(mark, kinds::BINOP);
+                    continue;
+                }
+                let _ = kw;
+            }
+            self.parse_expr_bp(rbp);
+            self.wrap_node(mark, kinds::BINOP);
+        }
+    }
+
+    fn peek_binop(&self) -> Option<(u8, u8, BinOpKind)> {
+        // Keyword comparisons first.
+        for kw in ["between", "in", "like", "is", "or", "and"] {
+            if self.peek_kw(kw) {
+                let bp: u8 = match kw {
+                    "or" => 1,
+                    "and" => 2,
+                    _ => 3,
+                };
+                return Some((bp, bp + 1, BinOpKind::Word(kw)));
+            }
+        }
+        let (kind, _) = self.peek_punct()?;
+        let (lbp, rbp) = match kind {
+            tk::EQUALS | tk::NEQ | tk::NEQ2 | tk::LT | tk::LE | tk::GT | tk::GE => (3_u8, 4_u8),
+            tk::PLUS | tk::MINUS => (4, 5),
+            tk::STAR | tk::SLASH | tk::PERCENT | tk::CONCAT => (5, 6),
+            _ => return None,
+        };
+        Some((lbp, rbp, BinOpKind::Punct(kind)))
+    }
+
+    fn punct_len(&self) -> u32 {
+        const TWO: &[&[u8]] = &[b"<=", b">=", b"!=", b"<>", b"||"];
+        for text in TWO {
+            if self.starts_with(text) {
+                return u32::try_from(text.len()).unwrap_or(u32::MAX);
+            }
+        }
+        1
+    }
+
+    fn peek_punct(&self) -> Option<(u16, u32)> {
+        self.peek()?;
+        let len = self.punct_len();
+        let start = usize::try_from(self.pos).unwrap_or(0);
+        let bytes = self.bytes.get(start..start + len as usize)?;
+        let kind = match bytes {
+            b"<=" => tk::LE,
+            b">=" => tk::GE,
+            b"!=" => tk::NEQ,
+            b"<>" => tk::NEQ2,
+            b"||" => tk::CONCAT,
+            b"=" => tk::EQUALS,
+            b"<" => tk::LT,
+            b">" => tk::GT,
+            b"+" => tk::PLUS,
+            b"-" => tk::MINUS,
+            b"/" => tk::SLASH,
+            b"%" => tk::PERCENT,
+            b"*" => tk::STAR,
+            b"(" => tk::LPAREN,
+            b")" => tk::RPAREN,
+            b"," => tk::COMMA,
+            b";" => tk::SEMI,
+            b"." => tk::DOT,
+            _ => return None,
+        };
+        Some((kind, len))
+    }
+
+    /// One expression atom: literals, words (with `.` qualification),
+    /// function calls, CASE, subqueries, paren groups, `*`.
+    #[allow(clippy::too_many_lines)]
+    fn parse_atom(&mut self) {
+        match self.peek() {
+            Some(b'\'') => self.bump_string(),
+            Some(b'0'..=b'9' | b'.') => {
+                let n = self.scan_number_len();
+                if n > 0 {
+                    self.bump(tk::NUMBER, n);
+                } else {
+                    let start = self.pos;
+                    self.fail_skip(start, true);
+                }
+            }
+            Some(b'(') => {
+                self.bump(tk::LPAREN, 1);
+                self.skip_trivia();
+                if self.peek_kw("select") {
+                    self.events.push(Event::Start {
+                        kind: kinds::SUBQUERY,
+                        forward_parent: None,
+                    });
+                    self.parse_select();
+                    self.events.push(Event::Finish);
+                } else if self.peek() != Some(b')') {
+                    self.parse_expr_bp(0);
+                }
+                self.skip_trivia();
+                if self.peek() == Some(b')') {
+                    self.bump(tk::RPAREN, 1);
+                } else {
+                    let start = self.pos;
+                    self.fail_skip(start, true);
+                }
+                self.wrap_node(mark_of(&self.events), kinds::GROUP);
+            }
+            Some(b'*') => {
+                self.events.push(Event::Start {
+                    kind: kinds::STAR,
+                    forward_parent: None,
+                });
+                self.bump(tk::STAR, 1);
+                self.events.push(Event::Finish);
+            }
+            Some(b) if b.is_ascii_alphabetic() || b == b'_' => {
+                self.parse_word_expr();
+            }
+            _ => {
+                let start = self.pos;
+                self.fail_skip(start, true);
+            }
+        }
+    }
+
+    /// A word-led expression: CASE, function call, qualified column,
+    /// NULL/TRUE/FALSE literals.
+    #[allow(clippy::too_many_lines)]
+    fn parse_word_expr(&mut self) {
+        let mark = self.events.len();
+        // CASE … END.
+        if self.peek_kw("case") {
+            self.events.push(Event::Start {
+                kind: kinds::CASE,
+                forward_parent: None,
+            });
+            self.bump_kw("case");
+            self.skip_trivia();
+            if !self.peek_kw("when") {
+                self.parse_expr_bp(0); // CASE operand form
+                self.skip_trivia();
+            }
+            while self.peek_kw("when") {
+                self.events.push(Event::Start {
+                    kind: kinds::WHEN,
+                    forward_parent: None,
+                });
+                self.bump_kw("when");
+                self.skip_trivia();
+                self.parse_expr_bp(0);
+                self.skip_trivia();
+                if self.peek_kw("then") {
+                    self.bump_kw("then");
+                    self.skip_trivia();
+                    self.parse_expr_bp(0);
+                } else {
+                    let start = self.pos;
+                    self.fail_skip(start, true);
+                }
+                self.events.push(Event::Finish);
+                self.skip_trivia();
+            }
+            if self.peek_kw("else") {
+                self.bump_kw("else");
+                self.skip_trivia();
+                self.parse_expr_bp(0);
+                self.skip_trivia();
+            }
+            if self.peek_kw("end") {
+                self.bump_kw("end");
+            } else {
+                let start = self.pos;
+                self.fail_skip(start, true);
+            }
+            self.events.push(Event::Finish);
+            return;
+        }
+        self.bump_word();
+        self.skip_trivia();
+        // Function call `f(args)` — but NOT keyword literals.
+        let word_is_literal = self.tokens.last().is_some_and(|(k, r)| {
+            *k == tk::WORD && {
+                let text = &self.bytes[r.start as usize..r.end as usize];
+                let folded = String::from_utf8_lossy(text).to_ascii_lowercase();
+                folded == "null" || folded == "true" || folded == "false"
+            }
+        });
+        if !word_is_literal && self.peek() == Some(b'(') {
+            self.bump(tk::LPAREN, 1);
+            self.parse_call_args();
+            self.wrap_node(mark, kinds::CALL);
+            return;
+        }
+        // Qualified column `t.c` / `t.*`.
+        if self.peek() == Some(b'.') {
+            self.bump(tk::DOT, 1);
+            self.skip_trivia();
+            if self.peek() == Some(b'*') {
+                self.bump(tk::STAR, 1);
+            } else {
+                self.bump_word();
+            }
+            self.wrap_node(mark, kinds::QUALIFIED);
+            return;
+        }
+        let _ = mark;
+    }
+
+    fn parse_call_args(&mut self) {
+        loop {
+            self.skip_trivia();
+            match self.peek() {
+                Some(b')') | None => break,
+                _ => {}
+            }
+            if self.peek() == Some(b'*') {
+                self.bump(tk::STAR, 1);
+            } else {
+                self.parse_expr_bp(0);
+            }
+            self.skip_trivia();
+            if self.peek() == Some(b',') {
+                self.bump(tk::COMMA, 1);
+                continue;
+            }
+            break;
+        }
+        self.skip_trivia();
+        if self.peek() == Some(b')') {
+            self.bump(tk::RPAREN, 1);
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+        }
+    }
+}
+
+/// The events length at `mark` time — a helper for the paren group
+/// wrap (the mark equals the current length inside `parse_atom`).
+fn mark_of(events: &[Event]) -> usize {
+    events.len()
+}
+
+/// Binary operator discriminator.
+enum BinOpKind {
+    /// A keyword operator (`AND`, `IN`, …).
+    Word(&'static str),
+    /// A punctuation operator.
+    Punct(u16),
 }
