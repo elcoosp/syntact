@@ -83,6 +83,27 @@ const CORPUS: &[(&str, usize)] = &[
     ("function g(): number { return 1; }", 0),
     ("// only a comment", 0),
     ("", 0),
+    // -- feature-completeness pass (optional chaining, nullish, generators,
+    //    private fields, param properties, switch, labels, fn types) -------
+    ("const v = obj?.a?.b ?? fallback;", 0),
+    ("const w = a?.[i]?.(x);", 0),
+    ("function* g() { yield 1; yield; }", 0),
+    (
+        "async function* ag(): AsyncGenerator<number> { yield 1; }",
+        0,
+    ),
+    ("class C { #priv = 1; read() { return this.#priv; } }", 0),
+    (
+        "class C { constructor(public readonly name: string) {} }",
+        0,
+    ),
+    (
+        "switch (x) { case 1: break; case 2 + 3: break; default: break; }",
+        0,
+    ),
+    ("outer: for (const k in obj) { continue outer; }", 0),
+    ("type F = (a: string, ...rest: number[]) => void;", 0),
+    ("type G = (a?: number, b = 2) => void;", 0),
     // -- malformed with tolerated-error budgets -------------------------
     ("let x = ;", 1),             // missing value
     ("let x = @;", 1),            // garbage value
@@ -284,6 +305,41 @@ fn recovery_stays_within_budgets() {
             "one Error event per tolerated error: {source:?}"
         );
     }
+}
+
+/// Structural shapes for the feature-completeness pass: try/catch,
+/// do…while, switch, labels, generators, optional chaining.
+#[test]
+fn control_flow_and_generator_shapes() {
+    let try_src = "try { a(); } catch (e) { b(); } finally { c(); }";
+    let (events, _, errors) = parse_events(try_src);
+    assert_eq!(errors, 0, "{try_src:?}");
+    assert_eq!(count_kind(&events, kinds::TRY), 1);
+
+    let do_src = "do { step(); } while (c);";
+    let (events, _, errors) = parse_events(do_src);
+    assert_eq!(errors, 0, "{do_src:?}");
+    assert_eq!(count_kind(&events, kinds::DO_WHILE), 1);
+
+    let switch_src = "switch (x) { case 1: break; default: break; }";
+    let (events, _, errors) = parse_events(switch_src);
+    assert_eq!(errors, 0, "{switch_src:?}");
+    assert_eq!(count_kind(&events, kinds::SWITCH), 1);
+    assert_eq!(count_kind(&events, kinds::CASE_LABEL), 2);
+
+    let label_src = "outer: for (const k in obj) { continue outer; }";
+    let (events, _, errors) = parse_events(label_src);
+    assert_eq!(errors, 0, "{label_src:?}");
+    assert_eq!(count_kind(&events, kinds::CASE_LABEL), 1, "label node");
+
+    let gen_src = "function* g() { yield 1; yield; }";
+    let (events, _, errors) = parse_events(gen_src);
+    assert_eq!(errors, 0, "{gen_src:?}");
+    assert_eq!(count_kind(&events, kinds::YIELD), 2);
+
+    let chain_src = "const v = a?.[i]?.(x) ?? fb;";
+    let (_, _, errors) = parse_events(chain_src);
+    assert_eq!(errors, 0, "{chain_src:?}");
 }
 
 fn count_kind(events: &[Event], kind: u16) -> usize {
