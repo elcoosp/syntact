@@ -136,6 +136,10 @@ pub struct Lowered {
 
 impl Lowered {
     /// Productions with the given left-hand side.
+    ///
+    /// # Panics
+    /// When the production count exceeds `u32::MAX`
+    /// (index-space exhaustion).
     #[must_use]
     pub fn productions_of(&self, lhs: NontermId) -> Vec<u32> {
         self.productions
@@ -152,6 +156,9 @@ impl Lowered {
 // ---------------------------------------------------------------------------
 
 /// Lower a grammar into productions.
+///
+/// # Panics
+/// When the grammar exceeds `u32::MAX` rules (index-space exhaustion).
 #[must_use]
 pub fn lower(grammar: &Grammar) -> Lowered {
     let mut ctx = Ctx {
