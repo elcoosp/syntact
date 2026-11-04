@@ -113,13 +113,10 @@ impl GirDoc {
                     match item.marker {
                         None => elements.push(element),
                         Some(marker) => {
-                            // Markers bind backward: replace the last
-                            // element with its wrapped form.
-                            let last = elements.pop().ok_or(SurfaceError::DanglingMarker {
-                                marker: marker.word().to_owned(),
-                                span: item.span,
-                            })?;
-                            elements.push(wrap(marker, last));
+                            // Markers bind backward: the loader attached
+                            // the marker word to this very item, so the
+                            // item's own element gets wrapped.
+                            elements.push(wrap(marker, element));
                         }
                     }
                 }
