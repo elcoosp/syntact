@@ -320,6 +320,10 @@ impl Grammar {
     ///
     /// # Errors
     /// A descriptive [`IrError`] naming the offending rule.
+    ///
+    /// # Panics
+    /// When the rule count exceeds `u32::MAX` or the token count
+    /// exceeds `u16::MAX` (index-space exhaustion, not user input).
     pub fn validate(&self) -> Result<(), IrError> {
         if self.rules.is_empty() {
             return Err(IrError::EmptyGrammar);
@@ -402,6 +406,9 @@ impl Grammar {
 
     /// Rules not reachable from the start rule (analysis input; codegen
     /// skips them with a warning).
+    ///
+    /// # Panics
+    /// When the rule count exceeds `u32::MAX` (index-space exhaustion).
     #[must_use]
     pub fn unreachable_rules(&self) -> Vec<RuleId> {
         let mut reachable = BTreeSet::new();
@@ -631,6 +638,10 @@ impl GrammarBuilder {
     ///
     /// # Errors
     /// [`IrError::DuplicateRule`] when `name` was already declared.
+    ///
+    /// # Panics
+    /// When the rule count exceeds `u32::MAX` or the interner exhausts
+    /// `u32::MAX` symbols.
     pub fn declare_rule(&mut self, name: &str) -> Result<RuleId, IrError> {
         if self.rule_ids.contains_key(name) {
             return Err(IrError::DuplicateRule {
@@ -657,6 +668,10 @@ impl GrammarBuilder {
     }
 
     /// Set (or replace) a rule's canonical body.
+    ///
+    /// # Panics
+    /// When `id` is not a rule previously returned by
+    /// [`Self::declare_rule`] (out-of-bounds).
     pub fn set_body(&mut self, id: RuleId, body: Element) -> &mut Self {
         self.rules[usize::try_from(id.0).expect("rule id in bounds")].body = body;
         self
@@ -675,36 +690,54 @@ impl GrammarBuilder {
     }
 
     /// Set the `node` annotation (`@node`) on a rule.
+    ///
+    /// # Panics
+    /// When `id` is out of bounds (not a declared rule).
     pub fn set_node_rule(&mut self, id: RuleId, node: bool) -> &mut Self {
         self.rules[usize::try_from(id.0).expect("rule id in bounds")].node = node;
         self
     }
 
     /// Set the `reuse` annotation (`@reuse`) on a rule.
+    ///
+    /// # Panics
+    /// When `id` is out of bounds (not a declared rule).
     pub fn set_reuse(&mut self, id: RuleId, reuse: bool) -> &mut Self {
         self.rules[usize::try_from(id.0).expect("rule id in bounds")].reuse = reuse;
         self
     }
 
     /// Set the `list` annotation (separated-sugar origin) on a rule.
+    ///
+    /// # Panics
+    /// When `id` is out of bounds (not a declared rule).
     pub fn set_list(&mut self, id: RuleId, list: bool) -> &mut Self {
         self.rules[usize::try_from(id.0).expect("rule id in bounds")].list = list;
         self
     }
 
     /// Set the `wrap_error` recovery annotation on a rule.
+    ///
+    /// # Panics
+    /// When `id` is out of bounds (not a declared rule).
     pub fn set_wrap_error(&mut self, id: RuleId, wrap_error: bool) -> &mut Self {
         self.rules[usize::try_from(id.0).expect("rule id in bounds")].wrap_error = wrap_error;
         self
     }
 
     /// Set the Pratt hint on a rule.
+    ///
+    /// # Panics
+    /// When `id` is out of bounds (not a declared rule).
     pub fn set_pratt(&mut self, id: RuleId, hint: PrattHint) -> &mut Self {
         self.rules[usize::try_from(id.0).expect("rule id in bounds")].pratt = Some(hint);
         self
     }
 
     /// Append sync tokens to a rule's recovery sync set.
+    ///
+    /// # Panics
+    /// When `id` is out of bounds (not a declared rule).
     pub fn add_sync(&mut self, id: RuleId, tokens: &[TokenId]) -> &mut Self {
         self.rules[usize::try_from(id.0).expect("rule id in bounds")]
             .sync
@@ -713,6 +746,9 @@ impl GrammarBuilder {
     }
 
     /// Set the missing-token insertion candidates on a rule.
+    ///
+    /// # Panics
+    /// When `id` is out of bounds (not a declared rule).
     pub fn set_insert(&mut self, id: RuleId, tokens: Vec<TokenId>) -> &mut Self {
         self.rules[usize::try_from(id.0).expect("rule id in bounds")].insert = tokens;
         self
