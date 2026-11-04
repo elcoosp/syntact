@@ -1,6 +1,6 @@
 //! Pratt hint lowering (issue 013): rewrite a pratt-hinted rule's
 //! left-recursive alternatives into the repetition shape the descent Pratt
-//! backend executes, keeping the [`PrattHint`] annotation as the source of
+//! backend executes, keeping the [`gir_ir::PrattHint`] annotation as the source of
 //! binding powers and associativity at parse time.
 //!
 //! `expr → expr ⊕ tail | atom…` becomes `expr → atom (tail)*` — the
