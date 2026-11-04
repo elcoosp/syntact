@@ -376,6 +376,54 @@ impl<'s> Parser<'s> {
         }
     }
 
+    /// If a string/char literal with a C encoding prefix (`u8`/`u`/`U`/`L`)
+    /// starts at the cursor, the total token length (prefix + literal).
+    fn string_prefix_len(&self) -> Option<u32> {
+        const PREFIXES: [&[u8]; 4] = [b"u8", b"u", b"U", b"L"];
+        let start = self.pos as usize;
+        let mut prefix_len = None;
+        for prefix in PREFIXES {
+            if self.bytes.get(start..start + prefix.len()) == Some(prefix) {
+                prefix_len = Some(prefix.len());
+                break;
+            }
+        }
+        let plen = prefix_len?;
+        match self.bytes.get(start + plen)? {
+            b'"' => {
+                let sub = Parser {
+                    bytes: self.bytes,
+                    pos: u32::try_from(start + plen).ok()?,
+                    last_end: 0,
+                    events: Vec::new(),
+                    tokens: Vec::new(),
+                    trivia: Vec::new(),
+                    errors: 0,
+                    depth: 0,
+                    typedefs: self.typedefs.clone(),
+                };
+                let lit = sub.scan_string_len()?;
+                u32::try_from(plen).ok().and_then(|p| p.checked_add(lit))
+            }
+            b'\'' => {
+                let sub = Parser {
+                    bytes: self.bytes,
+                    pos: u32::try_from(start + plen).ok()?,
+                    last_end: 0,
+                    events: Vec::new(),
+                    tokens: Vec::new(),
+                    trivia: Vec::new(),
+                    errors: 0,
+                    depth: 0,
+                    typedefs: self.typedefs.clone(),
+                };
+                let lit = sub.scan_char_len()?;
+                u32::try_from(plen).ok().and_then(|p| p.checked_add(lit))
+            }
+            _ => None,
+        }
+    }
+
     /// `'…'` with escapes; `None` = unterminated.
     fn scan_char_len(&self) -> Option<u32> {
         let start = self.pos as usize;
@@ -564,21 +612,52 @@ impl<'s> Parser<'s> {
         self.skip_trivia();
         self.parse_base_type();
         self.skip_trivia();
-        // The declared name: strip pointer stars.
-        while self.peek() == Some(b'*') {
-            self.bump(tk::STAR, 1);
+        if self.peek() == Some(b'(') {
+            // `typedef int (*cb)(void *);` — a grouped declarator: the
+            // declared name lives inside the parens.
+            self.bump(tk::LPAREN, 1);
             self.skip_trivia();
-        }
-        let n = self.scan_name_len();
-        if n > 0 {
-            let name =
-                String::from_utf8_lossy(&self.bytes[self.pos as usize..(self.pos + n) as usize])
-                    .into_owned();
-            self.typedefs.insert(name);
-            self.bump(tk::NAME, n);
+            while self.peek() == Some(b'*') {
+                self.bump(tk::STAR, 1);
+                self.skip_trivia();
+            }
+            let n = self.scan_name_len();
+            if n > 0 {
+                let name = String::from_utf8_lossy(
+                    &self.bytes[self.pos as usize..(self.pos + n) as usize],
+                )
+                .into_owned();
+                self.typedefs.insert(name);
+                self.bump(tk::NAME, n);
+            } else {
+                let start = self.pos;
+                self.fail_skip(start, true);
+            }
+            self.skip_trivia();
+            if self.peek() == Some(b')') {
+                self.bump(tk::RPAREN, 1);
+            } else {
+                let start = self.pos;
+                self.fail_skip(start, true);
+            }
         } else {
-            let start = self.pos;
-            self.fail_skip(start, true);
+            // The declared name: strip pointer stars.
+            while self.peek() == Some(b'*') {
+                self.bump(tk::STAR, 1);
+                self.skip_trivia();
+            }
+            let n = self.scan_name_len();
+            if n > 0 {
+                let name = String::from_utf8_lossy(
+                    &self.bytes[self.pos as usize..(self.pos + n) as usize],
+                )
+                .into_owned();
+                self.typedefs.insert(name);
+                self.bump(tk::NAME, n);
+            } else {
+                let start = self.pos;
+                self.fail_skip(start, true);
+            }
         }
         self.skip_trivia();
         // Optional array/param suffix on the typedef.
@@ -662,6 +741,14 @@ impl<'s> Parser<'s> {
                         self.parse_base_type();
                         self.skip_trivia();
                         self.parse_declarator();
+                        self.skip_trivia();
+                        // Bitfield width: `int lo : 3;`.
+                        if self.peek() == Some(b':') {
+                            self.bump(tk::COLON, 1);
+                            self.skip_trivia();
+                            self.parse_expr_bp(1);
+                            self.skip_trivia();
+                        }
                     } else {
                         self.bump_name();
                     }
@@ -926,6 +1013,35 @@ impl<'s> Parser<'s> {
                     self.events.push(Event::Finish);
                 } else if self.peek_kw("for") {
                     self.parse_for();
+                } else if self.peek_kw("switch") {
+                    self.parse_switch();
+                } else if self.peek_kw("case") || self.peek_kw("default") {
+                    self.parse_case_label();
+                } else if self.peek_kw("goto") {
+                    self.events.push(Event::Start {
+                        kind: kinds::GOTO,
+                        forward_parent: None,
+                    });
+                    self.bump_kw("goto");
+                    self.skip_trivia();
+                    self.bump_name();
+                    self.skip_semi();
+                    self.events.push(Event::Finish);
+                } else if self.label_ahead() {
+                    // `name:` — a labeled statement.
+                    self.events.push(Event::Start {
+                        kind: kinds::CASE_LABEL,
+                        forward_parent: None,
+                    });
+                    self.bump_name();
+                    self.skip_trivia();
+                    if self.peek() == Some(b':') {
+                        self.bump(tk::COLON, 1);
+                    } else {
+                        let start = self.pos;
+                        self.fail_skip(start, true);
+                    }
+                    self.events.push(Event::Finish);
                 } else if self.peek_kw("return") {
                     self.events.push(Event::Start {
                         kind: kinds::RETURN,
@@ -958,6 +1074,79 @@ impl<'s> Parser<'s> {
                 }
             }
         }
+    }
+
+    /// `switch (expr) { body }` — the body is a statement list where
+    /// `case`/`default` labels are statements ([`kinds::CASE_LABEL`]).
+    fn parse_switch(&mut self) {
+        self.events.push(Event::Start {
+            kind: kinds::SWITCH,
+            forward_parent: None,
+        });
+        self.bump_kw("switch");
+        self.skip_trivia();
+        self.paren_expr();
+        self.skip_trivia();
+        if self.peek() == Some(b'{') {
+            self.bump(tk::LBRACE, 1);
+            loop {
+                self.skip_trivia();
+                match self.peek() {
+                    Some(b'}') | None => break,
+                    _ => {}
+                }
+                self.parse_stmt();
+                self.skip_trivia();
+            }
+            if self.peek() == Some(b'}') {
+                self.bump(tk::RBRACE, 1);
+            } else {
+                let start = self.pos;
+                self.fail_skip(start, true);
+            }
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+        }
+        self.events.push(Event::Finish);
+    }
+
+    /// A `case expr:` / `default:` label.
+    fn parse_case_label(&mut self) {
+        self.events.push(Event::Start {
+            kind: kinds::CASE_LABEL,
+            forward_parent: None,
+        });
+        if self.peek_kw("case") {
+            self.bump_kw("case");
+            self.skip_trivia();
+            self.parse_expr_bp(1);
+            self.skip_trivia();
+        } else {
+            self.bump_kw("default");
+            self.skip_trivia();
+        }
+        if self.peek() == Some(b':') {
+            self.bump(tk::COLON, 1);
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+        }
+        self.events.push(Event::Finish);
+    }
+
+    /// Whether a `name:` label starts at the cursor (a name followed by
+    /// ws and a single `:`).
+    fn label_ahead(&self) -> bool {
+        let n = self.scan_name_len();
+        if n == 0 {
+            return false;
+        }
+        let mut idx = self.pos as usize + n as usize;
+        while matches!(self.bytes.get(idx), Some(b' ' | b'\t' | b'\r' | b'\n')) {
+            idx += 1;
+        }
+        self.bytes.get(idx) == Some(&b':') && self.bytes.get(idx + 1) != Some(&b':')
     }
 
     /// A local declaration: base type + declarators + inits + `;`.
@@ -1194,6 +1383,52 @@ impl<'s> Parser<'s> {
 
     fn parse_expr_bp(&mut self, min_bp: u8) {
         let mark = self.events.len();
+        // `sizeof(expr)` / `sizeof(type)` — must win over the cast
+        // branch, whose `cast_ahead` sees sizeof's type parens as a
+        // cast and then fails on the missing operand.
+        if self.peek_kw("sizeof") {
+            self.events.push(Event::Start {
+                kind: kinds::UNARY,
+                forward_parent: None,
+            });
+            self.bump_kw("sizeof");
+            self.skip_trivia();
+            if self.peek() == Some(b'(') {
+                self.bump(tk::LPAREN, 1);
+                self.skip_trivia();
+                if self.peek_is_type() {
+                    self.events.push(Event::Start {
+                        kind: kinds::TYPE_EXPR,
+                        forward_parent: None,
+                    });
+                    self.parse_base_type();
+                    self.skip_trivia();
+                    while self.peek() == Some(b'*') {
+                        self.bump(tk::STAR, 1);
+                        self.skip_trivia();
+                    }
+                    self.events.push(Event::Finish);
+                } else {
+                    self.parse_expr_bp(0);
+                    self.skip_trivia();
+                }
+                if self.peek() == Some(b')') {
+                    self.bump(tk::RPAREN, 1);
+                } else {
+                    let start = self.pos;
+                    self.fail_skip(start, true);
+                }
+            } else {
+                self.parse_expr_bp(12);
+            }
+            self.events.push(Event::Finish);
+            self.skip_trivia();
+            self.parse_postfix(mark);
+            self.skip_trivia();
+            self.parse_binops(mark, min_bp);
+            self.skip_trivia();
+            return;
+        }
         // Cast: `( Type ) expr` — only when the parens close on a type.
         if self.peek() == Some(b'(') && self.cast_ahead() {
             self.events.push(Event::Start {
@@ -1314,7 +1549,6 @@ impl<'s> Parser<'s> {
             }
             Some(b'+') if self.starts_with(b"++") => Some((tk::INCREMENT, 2, 13)),
             Some(b'-') if self.starts_with(b"--") => Some((tk::DECREMENT, 2, 13)),
-            Some(_) if self.peek_kw("sizeof") => Some((tk::NAME, 6, 12)),
             _ => None,
         }
     }
@@ -1573,6 +1807,11 @@ impl<'s> Parser<'s> {
                     }
                     return;
                 }
+                if let Some(total) = self.string_prefix_len() {
+                    // `u8"…"`, `L'…'` — prefix + literal lex as one token.
+                    self.bump(tk::STRING, total);
+                    return;
+                }
                 self.bump_name();
             }
             Some(b'0'..=b'9' | b'.') => {
@@ -1608,7 +1847,8 @@ impl<'s> Parser<'s> {
                 }
             }
             Some(b'{') => {
-                // Brace initialiser list `{ a, b, c }` — a TUPLE node.
+                // Brace initialiser list `{ a, b, c }` with optional
+                // designators (`[i] =`, `.f =`, mixed chains) — a TUPLE node.
                 let mark = self.events.len();
                 self.bump(tk::LBRACE, 1);
                 loop {
@@ -1617,7 +1857,19 @@ impl<'s> Parser<'s> {
                         Some(b'}') | None => break,
                         _ => {}
                     }
-                    self.parse_expr_bp(1);
+                    if self.parse_designator_prefix() {
+                        self.skip_trivia();
+                        if self.peek() == Some(b'=') {
+                            self.bump(tk::ASSIGN, 1);
+                            self.skip_trivia();
+                            self.parse_expr_bp(1);
+                        } else {
+                            let start = self.pos;
+                            self.fail_skip(start, true);
+                        }
+                    } else {
+                        self.parse_expr_bp(1);
+                    }
                     self.skip_trivia();
                     if self.peek() == Some(b',') {
                         self.bump(tk::COMMA, 1);
@@ -1639,6 +1891,41 @@ impl<'s> Parser<'s> {
                 self.fail_skip(start, true);
             }
         }
+    }
+
+    /// A designated-initializer prefix: `.name` / `[expr]` chains
+    /// (`.a.b`, `[i][j]`, `[i].f`). Returns whether one was consumed.
+    fn parse_designator_prefix(&mut self) -> bool {
+        let mut any = false;
+        loop {
+            match self.peek() {
+                Some(b'.') => {
+                    self.bump(tk::DOT, 1);
+                    self.skip_trivia();
+                    self.bump_name();
+                    self.skip_trivia();
+                    any = true;
+                }
+                Some(b'[') => {
+                    self.bump(tk::LBRACKET, 1);
+                    self.skip_trivia();
+                    if self.peek() != Some(b']') && self.peek().is_some() {
+                        self.parse_expr_bp(0);
+                        self.skip_trivia();
+                    }
+                    if self.peek() == Some(b']') {
+                        self.bump(tk::RBRACKET, 1);
+                    } else {
+                        let start = self.pos;
+                        self.fail_skip(start, true);
+                    }
+                    self.skip_trivia();
+                    any = true;
+                }
+                _ => break,
+            }
+        }
+        any
     }
 }
 
