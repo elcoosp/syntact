@@ -12,7 +12,7 @@ pub struct ByteSpan {
 }
 
 impl ByteSpan {
-    /// A span from a KDL/miette [`SourceSpan`] (offset + length).
+    /// A span from a KDL/miette `SourceSpan` (offset + length).
     #[must_use]
     pub fn new(start: usize, len: usize) -> Self {
         Self {
@@ -47,7 +47,7 @@ impl From<miette::SourceSpan> for ByteSpan {
     }
 }
 
-/// An error while loading a `.gir` KDL surface into a [`GirDoc`]
+/// An error while loading a `.gir` KDL surface into a [`crate::doc::GirDoc`]
 /// (`crate::GirDoc`), always carrying the offending [`ByteSpan`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SurfaceError {
