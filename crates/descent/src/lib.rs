@@ -15,7 +15,7 @@
 //! - **Ranges**: clean `(kind, range)` pairs parallel to token events,
 //!   DFS order; trivia records cover every gap so ranges + trivia
 //!   partition `[0, len)`.
-//! - **Errors**: [`Event::Error`] + an [`ERROR_KIND`] node wrapping the
+//! - **Errors**: [`Event::Error`] + an `ERROR_KIND` node wrapping the
 //!   offending token (omitted at EOF). Recovery consumes the offending
 //!   token unless it is one of the rule's sync kinds; every error
 //!   guarantees forward progress.
@@ -24,7 +24,7 @@
 //! ## Mode monomorphization hooks
 //!
 //! Every [`desc::RuleDesc`] pins an optional `mode_hook: Option<u16>` —
-//! the lexer mode (issue 022 [`lexgen::ModeAction`]) the rule's region is
+//! the lexer mode (issue 022 `lexgen::ModeAction`) the rule's region is
 //! scanned in. The engine records hook crossings in [`Run::modes`]; the
 //! codegen monomorphizes per pinned mode (one specialization per mode
 //! instead of runtime dispatch at hot spots).
