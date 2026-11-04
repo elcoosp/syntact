@@ -382,7 +382,6 @@ impl<'s> Parser<'s> {
 
     fn parse_document(&mut self) {
         loop {
-            let before = self.pos;
             self.skip_trivia(false);
             let Some(b) = self.peek() else {
                 break;
@@ -390,26 +389,6 @@ impl<'s> Parser<'s> {
             match b {
                 b'[' => self.parse_header(),
                 _ => self.parse_key_value(),
-            }
-            // Global progress guard: any iteration that consumed no bytes
-            // (a recovery path that stopped on a sync char) force-feeds
-            // one byte into an error region — the loop cannot spin.
-            if self.pos == before {
-                let start = self.pos;
-                self.pos += 1;
-                self.errors += 1;
-                self.events.push(Event::Error { diag: DIAG_SYNTAX });
-                self.events.push(Event::Start {
-                    kind: ERROR_KIND,
-                    forward_parent: None,
-                });
-                self.events.push(Event::Token {
-                    kind: ERROR_KIND,
-                    n_raw: 1,
-                });
-                self.tokens.push((ERROR_KIND, start..self.pos));
-                self.last_end = self.pos;
-                self.events.push(Event::Finish);
             }
         }
     }
@@ -470,7 +449,11 @@ impl<'s> Parser<'s> {
         };
         if !(key_ok && eq_ok && value_ok) {
             let start = self.pos;
-            self.fail_skip(start, !value_ok && key_ok && eq_ok);
+            // Always consume a stray: a zero-width error here loops
+            // forever on a stray `]` at document level (issue 030 fuzz
+            // found the hole in the issue-025 discipline).
+            let _ = (key_ok, eq_ok, value_ok);
+            self.fail_skip(start, true);
         }
         self.events.push(Event::Finish);
     }
