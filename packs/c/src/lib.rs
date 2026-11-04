@@ -89,6 +89,12 @@ pub mod kinds {
     pub const TYPE_EXPR: u16 = 23;
     /// A declarator group `(*f)(…)` / `x[3]`.
     pub const DECLARATOR: u16 = 24;
+    /// `switch (…) { … }`.
+    pub const SWITCH: u16 = 79;
+    /// A label: `case e:`, `default:`, or `name:`.
+    pub const CASE_LABEL: u16 = 80;
+    /// `goto name;`.
+    pub const GOTO: u16 = 81;
 }
 
 /// Token kinds — dense continuation of [`kinds`].
