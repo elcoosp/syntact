@@ -15,6 +15,7 @@ use runtime_core::sink::{TriviaRecord, drive_sink};
 use runtime_core::tree::{GreenNode, NodeCache, TreeBuilder};
 
 use crate::kinds;
+use crate::node_kinds_ext;
 use crate::token_kinds as tk;
 
 /// Diagnostic side-table index meaning "syntax error" — the only message
@@ -622,16 +623,38 @@ impl<'s> Parser<'s> {
     fn parse_statement(&mut self) {
         if self.peek() == Some(b'@') {
             self.parse_decorated();
+        } else if self.peek_kw("case") {
+            self.parse_case_arm();
         } else if self.peek_kw("if")
             || self.peek_kw("while")
             || self.peek_kw("for")
             || self.peek_kw("def")
             || self.peek_kw("class")
+            || self.peek_kw("try")
+            || self.peek_kw("with")
+            || self.peek_kw("async")
+            || (self.peek_kw("match") && self.match_stmt_ahead())
         {
             self.parse_compound();
         } else {
             self.parse_simple_line();
         }
+    }
+
+    /// Whether a `match` statement starts here (the soft keyword is
+    /// only a statement when its line ends with `:` — `match(x)` is a
+    /// call). Bounded lookahead to the newline.
+    fn match_stmt_ahead(&self) -> bool {
+        let mut idx = self.pos as usize + 5; // past `match`
+        while let Some(b) = self.bytes.get(idx) {
+            match b {
+                // `\n` and `#` both end the line without a `:`.
+                b'\n' | b'#' => return false,
+                b':' => return true,
+                _ => idx += 1,
+            }
+        }
+        false
     }
 
     /// `@` decorator lines followed by the decorated `def`/`class`.
@@ -674,9 +697,218 @@ impl<'s> Parser<'s> {
             self.parse_for();
         } else if self.peek_kw("def") {
             self.parse_def();
+        } else if self.peek_kw("try") {
+            self.parse_try();
+        } else if self.peek_kw("with") {
+            self.parse_with();
+        } else if self.peek_kw("async") {
+            self.parse_async();
+        } else if self.peek_kw("match") {
+            self.parse_match();
         } else {
             self.parse_class();
         }
+    }
+
+    /// `try: … except [type [as name]]: … [except …]* [else: …]
+    /// [finally: …]`.
+    fn parse_try(&mut self) {
+        self.events.push(Event::Start {
+            kind: node_kinds_ext::TRY,
+            forward_parent: None,
+        });
+        self.bump_kw("try");
+        self.skip_trivia();
+        if self.peek() == Some(b':') {
+            self.bump(tk::COLON, 1);
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+        }
+        self.parse_suite();
+        self.skip_trivia();
+        while self.peek_kw("except") {
+            self.events.push(Event::Start {
+                kind: node_kinds_ext::EXCEPT,
+                forward_parent: None,
+            });
+            self.bump_kw("except");
+            self.skip_trivia();
+            if self.peek() == Some(b'*') {
+                // `except*` (3.11 exception groups): the `*` rides.
+                self.bump(tk::STAR, 1);
+                self.skip_trivia();
+            }
+            if !self.at_line_end() && self.peek() != Some(b':') {
+                // Type tuple `(A, B)` or a single type.
+                self.parse_expr_bp(0);
+                self.skip_trivia();
+            }
+            if self.peek_kw("as") {
+                self.bump_kw("as");
+                self.skip_trivia();
+                let n = self.scan_name_len();
+                if n > 0 {
+                    self.bump(tk::NAME, n);
+                } else {
+                    let start = self.pos;
+                    self.fail_skip(start, true);
+                }
+                self.skip_trivia();
+            }
+            if self.peek() == Some(b':') {
+                self.bump(tk::COLON, 1);
+            } else {
+                let start = self.pos;
+                self.fail_skip(start, true);
+            }
+            self.parse_suite();
+            self.events.push(Event::Finish);
+            self.skip_trivia();
+        }
+        if self.peek_kw("else") {
+            self.bump_kw("else");
+            self.skip_trivia();
+            if self.peek() == Some(b':') {
+                self.bump(tk::COLON, 1);
+            }
+            self.parse_suite();
+            self.skip_trivia();
+        }
+        if self.peek_kw("finally") {
+            self.bump_kw("finally");
+            self.skip_trivia();
+            if self.peek() == Some(b':') {
+                self.bump(tk::COLON, 1);
+            }
+            self.parse_suite();
+        }
+        self.events.push(Event::Finish);
+    }
+
+    /// `with item [as target] (, item [as target])*: suite`.
+    fn parse_with(&mut self) {
+        self.events.push(Event::Start {
+            kind: node_kinds_ext::WITH,
+            forward_parent: None,
+        });
+        self.bump_kw("with");
+        loop {
+            self.skip_trivia();
+            self.events.push(Event::Start {
+                kind: node_kinds_ext::WITH_ITEM,
+                forward_parent: None,
+            });
+            // Parenthesized item groups ride the expr grammar.
+            self.parse_expr_bp(0);
+            self.skip_trivia();
+            if self.peek_kw("as") {
+                self.bump_kw("as");
+                self.skip_trivia();
+                // A single with-target: the item separator `,` is NOT
+                // part of the target (parenthesized tuples ride atoms).
+                if self.peek() == Some(b'*') {
+                    self.bump(tk::STAR, 1);
+                    self.skip_trivia();
+                }
+                self.parse_expr_bp(11);
+                self.skip_trivia();
+            }
+            self.events.push(Event::Finish);
+            if self.peek() == Some(b',') {
+                self.bump(tk::COMMA, 1);
+                continue;
+            }
+            break;
+        }
+        if self.peek() == Some(b':') {
+            self.bump(tk::COLON, 1);
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+        }
+        self.parse_suite();
+        self.events.push(Event::Finish);
+    }
+
+    /// `async` prefix: `async def` / `async with` / `async for` — the
+    /// keyword rides inside the compound node.
+    fn parse_async(&mut self) {
+        self.bump_kw("async");
+        self.skip_trivia();
+        if self.peek_kw("def") {
+            self.parse_def();
+        } else if self.peek_kw("with") {
+            self.parse_with();
+        } else if self.peek_kw("for") {
+            self.parse_for();
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+        }
+    }
+
+    /// `match expr: case pattern [, pattern] [if guard]: suite …` —
+    /// 3.10 structural pattern matching at reference granularity:
+    /// patterns ride the expression grammar (literals, names, tuples,
+    /// classes, `_`, `|` alternatives).
+    fn parse_match(&mut self) {
+        self.events.push(Event::Start {
+            kind: node_kinds_ext::MATCH,
+            forward_parent: None,
+        });
+        self.bump_kw("match");
+        self.skip_trivia();
+        self.parse_expr_bp(0);
+        self.skip_trivia();
+        if self.peek() == Some(b':') {
+            self.bump(tk::COLON, 1);
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+        }
+        self.parse_suite();
+        self.events.push(Event::Finish);
+    }
+
+    /// One `case pattern [, pattern] [if guard]:` arm (inside a match
+    /// suite).
+    fn parse_case_arm(&mut self) {
+        self.events.push(Event::Start {
+            kind: node_kinds_ext::CASE,
+            forward_parent: None,
+        });
+        self.bump_kw("case");
+        self.skip_trivia();
+        if self.peek() != Some(b':') && !self.at_line_end() {
+            self.parse_expr_bp(0);
+            self.skip_trivia();
+            // `|` alternatives ride the binop grammar; a `,` splits
+            // multiple patterns.
+            while self.peek() == Some(b',') {
+                self.bump(tk::COMMA, 1);
+                self.skip_trivia();
+                if self.peek() == Some(b':') || self.at_line_end() {
+                    break;
+                }
+                self.parse_expr_bp(0);
+                self.skip_trivia();
+            }
+        }
+        if self.peek_kw("if") {
+            self.bump_kw("if");
+            self.skip_trivia();
+            self.parse_expr_bp(0);
+            self.skip_trivia();
+        }
+        if self.peek() == Some(b':') {
+            self.bump(tk::COLON, 1);
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+        }
+        self.parse_suite();
+        self.events.push(Event::Finish);
     }
 
     /// `:` suite — either `NEWLINE INDENT … (dedent)` or a single line.
@@ -1336,9 +1568,32 @@ impl<'s> Parser<'s> {
         self.events.push(Event::Finish);
     }
 
+    /// Whether the last emitted token is a single plain NAME whose text
+    /// can head an annotated assignment (not a compound-head keyword).
+    fn last_name_is_annotation_target(&self) -> bool {
+        const HEAD_KEYWORDS: &[&str] = &[
+            "else", "elif", "except", "finally", "try", "case", "if", "while", "for", "with",
+            "def", "class", "match", "in", "is", "not", "and", "or", "lambda", "return", "pass",
+        ];
+        let Some((kind, range)) = self.tokens.last() else {
+            return false;
+        };
+        if *kind != tk::NAME {
+            return false;
+        }
+        let text = &self.bytes[range.start as usize..range.end as usize];
+        let folded = String::from_utf8_lossy(text);
+        !HEAD_KEYWORDS.contains(&folded.as_ref())
+    }
+
     /// Assignment / augmented assignment / bare expression statement.
     fn parse_expr_or_assign(&mut self) {
         let mark = self.events.len();
+        // Starred assignment target: `*rest = …`.
+        if self.peek() == Some(b'*') {
+            self.bump(tk::STAR, 1);
+            self.skip_trivia();
+        }
         self.parse_expr_bp(0);
         let mut tuple = false;
         self.skip_trivia();
@@ -1354,11 +1609,42 @@ impl<'s> Parser<'s> {
                 {
                     break;
                 }
+                // Starred target: `first, *rest = …`.
+                if self.peek() == Some(b'*') {
+                    self.bump(tk::STAR, 1);
+                    self.skip_trivia();
+                }
                 self.parse_expr_bp(0);
                 self.skip_trivia();
             }
             self.wrap_tuple(mark);
             tuple = true;
+        }
+        // Annotated assignment: `x: T [= expr]` — statement-level `:`
+        // after a complete expression is an annotation, never a slice.
+        // Only a plain non-keyword NAME can take an annotation (an
+        // orphan `else:` / `except:` head must recover as before).
+        if !tuple && self.peek() == Some(b':') && self.last_name_is_annotation_target() {
+            self.events.insert(
+                mark,
+                Event::Start {
+                    kind: kinds::ASSIGN,
+                    forward_parent: None,
+                },
+            );
+            self.bump(tk::COLON, 1);
+            self.skip_trivia();
+            self.parse_expr_bp(0); // annotation type
+            self.skip_trivia();
+            if self.peek() == Some(b'=') {
+                self.bump(tk::EQUALS, 1);
+                self.skip_trivia();
+                let vmark = self.events.len();
+                self.parse_expr_bp(0);
+                self.maybe_value_tuple(vmark);
+            }
+            self.events.push(Event::Finish);
+            return;
         }
         let aug = self.peek_aug();
         if self.peek() == Some(b'=') || aug.is_some() {
@@ -1478,7 +1764,9 @@ impl<'s> Parser<'s> {
     /// lives in the wrapper).
     fn parse_expr_bp_guarded(&mut self, min_bp: u8) {
         let mark = self.events.len();
-        if let Some((kind, n, rbp)) = self.peek_unary() {
+        if self.peek_kw("lambda") {
+            self.parse_lambda();
+        } else if let Some((kind, n, rbp)) = self.peek_unary() {
             self.bump(kind, n);
             self.skip_trivia();
             self.parse_expr_bp(rbp);
@@ -1518,8 +1806,45 @@ impl<'s> Parser<'s> {
             Some(b'+') if !self.starts_with(b"+=") => Some((tk::PLUS, 1, 11)),
             Some(b'~') => Some((tk::TILDE, 1, 11)),
             Some(_) if self.peek_kw("not") => Some((tk::NAME, Self::kw_len("not"), 4)),
+            Some(_) if self.peek_kw("await") => Some((tk::NAME, Self::kw_len("await"), 12)),
             _ => None,
         }
+    }
+
+    /// One comma-separated subscript item: a plain expression, or a
+    /// slice `[lower]:[upper][:step]` (SLICE node).
+    fn parse_subscript_item(&mut self) {
+        let mark = self.events.len();
+        if self.peek() != Some(b':') {
+            self.parse_expr_bp(0);
+            self.skip_trivia();
+        }
+        if self.peek() != Some(b':') {
+            return; // plain index — events stay unwrapped
+        }
+        // Slice: `x`, `x:y`, `x:y:z`, `:y`, `::z`.
+        self.events.insert(
+            mark,
+            Event::Start {
+                kind: node_kinds_ext::SLICE,
+                forward_parent: None,
+            },
+        );
+        self.bump(tk::COLON, 1); // first `:`
+        self.skip_trivia();
+        if self.peek() != Some(b':') && self.peek() != Some(b',') && self.peek() != Some(b']') {
+            self.parse_expr_bp(0);
+            self.skip_trivia();
+        }
+        if self.peek() == Some(b':') {
+            self.bump(tk::COLON, 1); // second `:`
+            self.skip_trivia();
+            if self.peek() != Some(b',') && self.peek() != Some(b']') {
+                self.parse_expr_bp(0);
+                self.skip_trivia();
+            }
+        }
+        self.events.push(Event::Finish);
     }
 
     /// Postfix loop: calls, subscripts, attribute access — each wraps
@@ -1536,8 +1861,21 @@ impl<'s> Parser<'s> {
                     self.bump_bracket(tk::LBRACKET, 1, true);
                     self.skip_trivia();
                     if self.peek() != Some(b']') && self.peek().is_some() {
-                        self.parse_expr_bp(0);
-                        self.skip_trivia();
+                        // Comma-separated items (indices and/or slices):
+                        // `m[i, j]`, `grid[::2, :-1]`.
+                        loop {
+                            self.parse_subscript_item();
+                            self.skip_trivia();
+                            if self.peek() == Some(b',') {
+                                self.bump(tk::COMMA, 1);
+                                self.skip_trivia();
+                                if self.peek() == Some(b']') || self.peek().is_none() {
+                                    break;
+                                }
+                                continue;
+                            }
+                            break;
+                        }
                     }
                     if self.peek() == Some(b']') {
                         self.bump_bracket(tk::RBRACKET, 1, false);
@@ -1591,7 +1929,15 @@ impl<'s> Parser<'s> {
                         self.skip_trivia();
                         self.parse_expr_bp(0);
                     } else {
+                        // A lone first argument may be a bare generator
+                        // expression: `sum(x for x in xs if x)`.
+                        let mark = self.events.len();
                         self.parse_expr_bp(0);
+                        self.skip_trivia();
+                        if self.peek_kw("for") {
+                            self.parse_comp_clauses();
+                            self.wrap_node(mark, kinds::GENERATOR);
+                        }
                     }
                 }
             }
@@ -1609,6 +1955,61 @@ impl<'s> Parser<'s> {
             let start = self.pos;
             self.fail_skip(start, true);
         }
+    }
+
+    /// `lambda [name[= default], *args, **kwargs]: expr`.
+    fn parse_lambda(&mut self) {
+        let mark = self.events.len();
+        self.bump_kw("lambda");
+        self.skip_trivia();
+        loop {
+            self.skip_trivia();
+            if self.peek() == Some(b':') || self.at_line_end() {
+                break;
+            }
+            if self.peek() == Some(b'*') {
+                if self.at(1) == Some(b'*') {
+                    self.bump(tk::POWER, 2);
+                } else {
+                    self.bump(tk::STAR, 1);
+                }
+                self.skip_trivia();
+                let n = self.scan_name_len();
+                if n > 0 {
+                    self.bump(tk::NAME, n);
+                    self.skip_trivia();
+                }
+            } else {
+                let n = self.scan_name_len();
+                if n == 0 {
+                    let start = self.pos;
+                    self.fail_skip(start, true);
+                    break;
+                }
+                self.bump(tk::NAME, n);
+                self.skip_trivia();
+                if self.peek() == Some(b'=') {
+                    self.bump(tk::EQUALS, 1);
+                    self.skip_trivia();
+                    self.parse_expr_bp(0);
+                    self.skip_trivia();
+                }
+            }
+            if self.peek() == Some(b',') {
+                self.bump(tk::COMMA, 1);
+                continue;
+            }
+            break;
+        }
+        if self.peek() == Some(b':') {
+            self.bump(tk::COLON, 1);
+            self.skip_trivia();
+            self.parse_expr_bp(0);
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+        }
+        self.wrap_node(mark, node_kinds_ext::LAMBDA);
     }
 
     /// Binary operators by binding power. Keyword ops (`or`/`and`,
@@ -1694,6 +2095,9 @@ impl<'s> Parser<'s> {
             return Some((2, 3, false));
         }
         let (kind, _) = self.peek_punct()?;
+        if kind == tk::WALRUS {
+            return Some((2, 3, false));
+        }
         let (lbp, rbp, is_cmp) = match kind {
             tk::PIPE => (5_u8, 6_u8, false),
             tk::CARET => (6, 7, false),
@@ -1721,6 +2125,7 @@ impl<'s> Parser<'s> {
         const TWO: &[(&[u8], u16)] = &[
             (b"**", tk::POWER),
             (b"//", tk::DOUBLE_SLASH),
+            (b":=", tk::WALRUS),
             (b"==", tk::EQ),
             (b"!=", tk::NEQ),
             (b"<=", tk::LE),
