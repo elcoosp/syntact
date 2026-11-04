@@ -11,6 +11,15 @@ authors.workspace = true
 [dependencies]
 runtime-core.workspace = true
 packs-json.workspace = true
+packs-toml.workspace = true
+packs-python.workspace = true
+packs-typescript.workspace = true
+packs-rust.workspace = true
+packs-c.workspace = true
+packs-sql.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
 
 [lints]
 workspace = true
