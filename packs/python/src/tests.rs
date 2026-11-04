@@ -13,6 +13,7 @@ use runtime_core::input::Source;
 use runtime_core::tree::{GreenChild, GreenNode};
 
 use crate::kinds;
+use crate::node_kinds_ext;
 use crate::reference::parse_events;
 use crate::{ROOT_KIND, token_kinds as tk};
 
@@ -91,6 +92,30 @@ const CORPUS: &[(&str, usize)] = &[
     ("def f(:\n    pass", 4),   // stray `:` + params/colon/suite recovery
     ("x = (1, 2", 1),           // unterminated tuple
     ("else:\n    pass", 1),     // orphan else
+    // -- feature-completeness pass (try/with/genexp/slices/lambda/annot/
+    //    walrus/async/match) --------------------------------------------
+    (
+        "try:\n    a()\nexcept (V, K) as e:\n    raise R(\"x\") from e\nfinally:\n    b()",
+        0,
+    ),
+    ("with open(\"f\") as f, open(\"g\") as g:\n    pass", 0),
+    ("with ctx:\n    pass", 0),
+    ("total = sum(x for x in xs if x)", 0),
+    ("first, *rest = [1, 2, 3]", 0),
+    ("lam = lambda x, y=2, *a, **kw: x + y", 0),
+    ("z = lambda: 7", 0),
+    ("x: int = 0", 0),
+    ("val = (n := 10) + 5", 0),
+    ("s = obj.items[1:2][0].name", 0),
+    ("row = grid[::2, :-1]", 0),
+    (
+        "async def fetch(u):\n    async with g(u) as r:\n        return await r.text()",
+        0,
+    ),
+    (
+        "match point:\n    case (0, 0):\n        pass\n    case _:\n        pass",
+        0,
+    ),
 ];
 
 /// Build the green tree through the full `parse` integration.
@@ -337,6 +362,51 @@ fn recovery_regions_are_well_formed() {
         );
         let _ = ranges;
     }
+}
+
+/// Structural shapes for the feature-completeness pass: try/except,
+/// with-items, genexp, slices, lambda, annotations, walrus, async,
+/// match — the corpus pins 0 errors; this pins the node shapes.
+#[test]
+fn control_flow_and_expression_shapes() {
+    let try_src = "try:\n    a()\nexcept V as e:\n    pass\nfinally:\n    b()";
+    let (events, _, errors) = parse_events(try_src);
+    assert_eq!(errors, 0, "{try_src:?}");
+    assert_eq!(count_kind(&events, node_kinds_ext::TRY), 1);
+    assert_eq!(count_kind(&events, node_kinds_ext::EXCEPT), 1);
+
+    let with_src = "with a() as x, b():\n    pass";
+    let (events, _, errors) = parse_events(with_src);
+    assert_eq!(errors, 0, "{with_src:?}");
+    assert_eq!(count_kind(&events, node_kinds_ext::WITH), 1);
+    assert_eq!(count_kind(&events, node_kinds_ext::WITH_ITEM), 2);
+
+    let gen_src = "total = sum(x for x in xs if x)";
+    let (events, _, errors) = parse_events(gen_src);
+    assert_eq!(errors, 0, "{gen_src:?}");
+    assert_eq!(count_kind(&events, kinds::GENERATOR), 1);
+
+    let slice_src = "row = grid[::2, :-1]";
+    let (events, _, errors) = parse_events(slice_src);
+    assert_eq!(errors, 0, "{slice_src:?}");
+    assert_eq!(count_kind(&events, node_kinds_ext::SLICE), 2);
+
+    let lambda_src = "lam = lambda x, y=2, *a, **kw: x + y";
+    let (events, _, errors) = parse_events(lambda_src);
+    assert_eq!(errors, 0, "{lambda_src:?}");
+    assert_eq!(count_kind(&events, node_kinds_ext::LAMBDA), 1);
+
+    let async_src = "async def f():\n    async with g() as r:\n        return await r.text()";
+    let (events, _, errors) = parse_events(async_src);
+    assert_eq!(errors, 0, "{async_src:?}");
+    assert_eq!(count_kind(&events, kinds::FUNC_DEF), 1);
+    assert_eq!(count_kind(&events, node_kinds_ext::WITH), 1);
+
+    let match_src = "match p:\n    case (0, y):\n        pass\n    case _:\n        pass";
+    let (events, _, errors) = parse_events(match_src);
+    assert_eq!(errors, 0, "{match_src:?}");
+    assert_eq!(count_kind(&events, node_kinds_ext::MATCH), 1);
+    assert_eq!(count_kind(&events, node_kinds_ext::CASE), 2);
 }
 
 fn count_kind(events: &[Event], kind: u16) -> usize {
