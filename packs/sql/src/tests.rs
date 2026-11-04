@@ -64,7 +64,7 @@ const CORPUS: &[(&str, usize)] = &[
     // -- malformed with tolerated-error budgets ---------------------------------
     ("SELECT FROM t;", 1),        // missing columns
     ("INSERT INTO t VALUES;", 1), // missing values row
-    ("CREATE TABL t (a);", 3),    // typo.d keyword + cascade
+    ("CREATE TABL t (a);", 2),    // typo.d keyword + cascade
 ];
 
 /// Build the green tree through the full `parse` integration.
