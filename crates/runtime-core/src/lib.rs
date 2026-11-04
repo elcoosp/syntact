@@ -3,15 +3,15 @@
 //! The runtime kernel every pack parser emits into and every consumer reads
 //! from (roadmap §7). Core pieces:
 //!
-//! - [`events`] — the 8-byte event protocol ([`Event`]), packed [`Output`]
-//!   streams, and [`events::process`] validation.
-//! - [`input`] — the [`Source`] input layer (line index, byte-accurate
+//! - [`events`] — the 8-byte event protocol ([`events::Event`]), packed
+//!   [`events::Output`] streams, and [`events::process`] validation.
+//! - [`input`] — the [`input::Source`] input layer (line index, byte-accurate
 //!   positions, u32 length guard).
-//! - [`sink`] — the [`Sink`] consumer trait ([`sink::drive_sink`]), the
+//! - [`sink`] — the [`sink::Sink`] consumer trait ([`sink::drive_sink`]), the
 //!   validate/scan/skeleton mode sinks, and trivia records (ADR-008).
 //! - [`tree`] — green trees with structural sharing ([`tree::GreenNode`],
 //!   [`tree::TreeBuilder`]), byte-faithful rendering, interning.
-//! - [`TokenSet`] + [`diagnostic`] — 192-bit expected sets and the
+//! - [`diagnostic::TokenSet`] + [`diagnostic`] — 192-bit expected sets and the
 //!   diagnostic side table.
 
 pub mod diagnostic;
