@@ -169,13 +169,14 @@ impl Output {
 pub fn process(events: &[Event]) -> Result<Output, String> {
     let mut stream = Vec::with_capacity(events.len());
     // Indices of Start events already folded into a forward-parent chain
-    // (they are skipped when reached).
-    let mut folded: Vec<bool> = vec![false; events.len()];
+    // (they are skipped when reached). Allocated lazily: streams without
+    // forward parents (every reference pack) never pay the N-byte zeroing.
+    let mut folded: Vec<bool> = Vec::new();
     // Open nodes: index of the Start event (for balance checking).
-    let mut open: Vec<usize> = Vec::new();
+    let mut open: Vec<usize> = Vec::with_capacity(16);
 
     for (idx, event) in events.iter().enumerate() {
-        if folded[idx] {
+        if !folded.is_empty() && folded[idx] {
             continue;
         }
         match *event {
@@ -189,6 +190,9 @@ pub fn process(events: &[Event]) -> Result<Output, String> {
                 let mut final_kind = kind;
                 let mut base = idx;
                 let mut fp = forward_parent;
+                if fp.is_some() && folded.is_empty() {
+                    folded.resize(events.len(), false);
+                }
                 while let Some(offset) = fp {
                     let target = base
                         + usize::try_from(offset.get()).map_err(|_| {
