@@ -72,12 +72,16 @@ pub struct DeterminismReport {
 impl DeterminismReport {
     /// Classify a grammar: FIRST/FOLLOW fixpoints, LL(1) verdicts, left
     /// recursion, backend selection.
+    ///
+    /// # Panics
+    /// Never for a grammar that went through [`crate`] lowering: every
+    /// rule receives an LL(1) verdict before the lookup.
     #[must_use]
     pub fn compute(grammar: &Grammar) -> Self {
         let first = FirstSets::compute(grammar);
         let follow = FollowSets::compute(grammar, &first);
         let verdicts_ll1 = crate::ll1::ll1_verdicts(grammar, &first, &follow);
-        let left_recursive = left_recursion(grammar);
+        let left_recursive = left_recursion_with_first(grammar, &first);
         let unreachable: std::collections::BTreeSet<RuleId> =
             grammar.unreachable_rules().into_iter().collect();
 
@@ -167,42 +171,58 @@ impl fmt::Display for DeterminismReport {
     }
 }
 
-/// Left-recursion (direct + indirect): `matrix[a][b]` is true when rule
-/// `a` can begin with rule `b` through nullable prefixes. Boolean
-/// fixpoint over a finite matrix — terminates.
+/// Left-recursion (direct + indirect): rule `a` is left-recursive when a
+/// left-corner cycle leads back to it. A per-node cycle search over the
+/// left-corner graph — O(rules) per node, linear on chains and O(n²)
+/// even in the dense worst case (a boolean-matrix Warshall closure would
+/// be cubic, which stalled `syntact build` for tens of seconds on deep
+/// rule chains).
 #[must_use]
 pub fn left_recursion(grammar: &Grammar) -> Vec<bool> {
     let first = FirstSets::compute(grammar);
+    left_recursion_with_first(grammar, &first)
+}
+
+/// [`left_recursion`] with caller-provided FIRST sets (avoids the second
+/// fixpoint when the report already computed one).
+#[must_use]
+pub fn left_recursion_with_first(grammar: &Grammar, first: &FirstSets) -> Vec<bool> {
     let n = grammar.rules.len();
-    // begins_with[a][b]: a's body has b as a left corner (through
+    // begins_with edges: a's body has b as a left corner (through
     // nullable prefixes).
-    let mut begins_with: Vec<Vec<bool>> = vec![vec![false; n]; n];
+    let mut edges: Vec<std::collections::BTreeSet<usize>> =
+        vec![std::collections::BTreeSet::new(); n];
     for rule in &grammar.rules {
         let mut corners: Vec<RuleId> = Vec::new();
         left_corners(&rule.body, &first.sets, &mut corners);
         for corner in corners {
             if let Ok(idx) = usize::try_from(corner.0) {
                 if idx < n {
-                    begins_with[rule.id.0 as usize][idx] = true;
+                    edges[rule.id.0 as usize].insert(idx);
                 }
             }
         }
     }
-    // Transitive closure (Warshall): a → k → b implies a begins with b.
-    // Row-union formulation: when row `a` already reaches `k`, it also
-    // reaches everything row `k` reaches. Monotone over a finite matrix
-    // — the pass terminates after n iterations.
-    for k in 0..n {
-        let k_row = begins_with[k].clone();
-        for row in &mut begins_with {
-            if row[k] {
-                for (cell, reach) in row.iter_mut().zip(k_row.iter().copied()) {
-                    *cell |= reach;
-                }
+    // Rule i is left-recursive when i is reachable from i through at
+    // least one left-corner edge (a cycle through i).
+    let mut left_recursive = vec![false; n];
+    let mut seen = vec![false; n];
+    for start in 0..n {
+        seen.fill(false);
+        let mut work: Vec<usize> = edges[start].iter().copied().collect();
+        while let Some(node) = work.pop() {
+            if node == start {
+                left_recursive[start] = true;
+                break;
             }
+            if seen[node] {
+                continue;
+            }
+            seen[node] = true;
+            work.extend(edges[node].iter().copied());
         }
     }
-    (0..n).map(|i| begins_with[i][i]).collect()
+    left_recursive
 }
 
 /// Collect the left corners of an element: rule references reachable
