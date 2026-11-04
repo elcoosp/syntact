@@ -17,6 +17,8 @@
 //! [`run`] is a pure function from arguments to an exit code, so the
 //! integration tests drive it directly.
 
+pub mod trace;
+
 use std::io::Read as _;
 
 use clap::{Parser as ClapParser, Subcommand};
@@ -59,6 +61,20 @@ pub enum Command {
         #[arg(value_name = "FILE", num_args = 1..)]
         files: Vec<String>,
     },
+    /// Trace a document: per-region recovery events (offset, repair ops,
+    /// resync point) — `--json` for tooling.
+    Trace {
+        /// The pack whose recovery pipeline drives the trace (currently
+        /// `json`).
+        #[arg(value_name = "PACK")]
+        pack: String,
+        /// The document to trace (`-` reads stdin).
+        #[arg(value_name = "FILE")]
+        file: String,
+        /// Emit machine-readable JSON instead of text.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Exit codes: 0 ok, 1 negative verdict, 2 usage/IO error.
@@ -89,6 +105,7 @@ where
         Command::Build { grammar } => cmd_build(&grammar),
         Command::Conflicts { grammar } => cmd_conflicts(&grammar),
         Command::Conformance { files } => cmd_conformance(&files),
+        Command::Trace { pack, file, json } => cmd_trace(&pack, &file, json),
     })
 }
 
@@ -222,6 +239,25 @@ fn cmd_conformance(files: &[String]) -> i32 {
         }
     }
     if failures == 0 { OK } else { FAIL }
+}
+
+fn cmd_trace(pack: &str, file: &str, json: bool) -> i32 {
+    if !pack.eq_ignore_ascii_case("json") {
+        eprintln!("trace: unsupported pack {pack:?} (only `json` is wired)");
+        return USAGE;
+    }
+    let Ok(text) = read_input(file) else {
+        return USAGE;
+    };
+    let grammar = harness::metrics::json_fixture();
+    let trace = trace::trace_json(&text);
+    let report = if json {
+        trace::render_json(&grammar, &trace)
+    } else {
+        trace::render_text(&grammar, &trace)
+    };
+    print!("{report}");
+    if trace.complete { OK } else { FAIL }
 }
 
 /// Load a grammar from the KDL surface (issue 004 loader).
