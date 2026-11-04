@@ -73,6 +73,10 @@ impl ModeLexer {
     /// # Errors
     /// [`LexError`] when any token regex fails to compile, or a spec is
     /// empty (a mode that can never match would stall the scanner).
+    ///
+    /// # Panics
+    /// When a mode's token count exceeds `u16::MAX` (the mode-local
+    /// accept index space).
     pub fn new(specs: &[ModeSpec]) -> Result<Self, LexError> {
         if specs.is_empty() {
             return Err(LexError {
@@ -122,6 +126,10 @@ impl ModeLexer {
     }
 
     /// The current mode id (top of the stack).
+    ///
+    /// # Panics
+    /// Never: the mode stack starts with the base mode and every pop
+    /// keeps the bottom element, so it is never empty.
     #[must_use]
     pub fn current(&self) -> u16 {
         *self.stack.last().expect("stack never empties")
