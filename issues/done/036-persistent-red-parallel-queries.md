@@ -2,7 +2,7 @@
 
 - **Epic:** Phase 4 (epic 093)
 - **Crates:** crates/runtime-core
-- **Status:** open
+- **Status:** done
 
 ## Work
 
