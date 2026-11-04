@@ -84,6 +84,10 @@ pub struct Dfa {
 
 impl Dfa {
     /// Subset construction over `nfa`.
+    ///
+    /// # Panics
+    /// When subset construction produces more than `u32::MAX` DFA
+    /// states (index-space exhaustion).
     #[must_use]
     pub fn from_nfa(nfa: &Nfa) -> Self {
         let classes = CharClasses::from_nfa(nfa);
