@@ -124,6 +124,56 @@ fn round_trip_render_reloads_to_equal_ir() {
 }
 
 #[test]
+fn markers_wrap_their_own_item() {
+    // Regression (issue 037): `pair-list opt` must wrap pair-list in the
+    // IR — not the preceding element — and a marked item may be the only
+    // item in the sequence.
+    let grammar = load_grammar(
+        r#"
+language "markers" version="1.0.0"
+tokens {
+    string kind=re "\"[^\"]*\""
+}
+grammar {
+    object kind=seq "{" pair-list opt "}" node="true"
+    one-item kind=seq pair-list rep
+    pair-list kind=sep element=pair separator=","
+    pair kind=seq string ":" string
+}
+"#,
+    )
+    .expect("lowers");
+    let object = grammar
+        .rules
+        .iter()
+        .find(|rule| grammar.interner.lookup(rule.name) == "object")
+        .expect("object rule");
+    let Element::Seq(parts) = &object.body else {
+        panic!("object is a seq");
+    };
+    assert_eq!(parts.len(), 3);
+    let Element::Opt(inner) = &parts[1] else {
+        panic!("the marked item is optional");
+    };
+    assert!(
+        matches!(**inner, Element::Rule(_)),
+        "opt wraps the pair-list reference, not the preceding literal"
+    );
+    let one_item = grammar
+        .rules
+        .iter()
+        .find(|rule| grammar.interner.lookup(rule.name) == "one-item")
+        .expect("one-item rule");
+    let Element::Seq(parts) = &one_item.body else {
+        panic!("one-item is a seq");
+    };
+    assert!(
+        matches!(parts[0], Element::Rep { .. }),
+        "a single marked item lowers without a dangling-marker error"
+    );
+}
+
+#[test]
 fn separated_sugar_lowers_to_rep_and_opt() {
     let grammar = load_grammar(JSON).expect("ir");
     let pair_list = grammar
