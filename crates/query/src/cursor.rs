@@ -1,243 +1,321 @@
-//! The streaming cursor (issue 031): one pass over the packed [`Output`]
-//! steps builds a compact node table (kind, span, children — no tree
-//! allocation beyond the table); matching runs against that table with
-//! **reusable scratch** — O(1) alloc per candidate step, the scratch is
-//! allocated once per cursor and reused across candidates (pinned by the
-//! test suite via [`QueryCursor::scratch_capacity`]).
+//! The streaming `QueryCursor` (issue 031): a single pass over the packed
+//! [`Output`] steps — no tree construction. Each node's summary (kind,
+//! child-kind sequence, span) is buffered between its `Enter` and
+//! `Exit`; on `Exit` the compiled patterns run (kind prefilter first),
+//! and captures land in a caller-provided scratch buffer that is
+//! cleared — never reallocated — per candidate.
 
 use std::ops::Range;
 
 use runtime_core::events::{Output, Step};
 
-use crate::compile::{CompiledQuery, WILDCARD, bitset_allows};
+use crate::query::{ChildStep, CompiledQuery, Predicate, Quant};
 
-/// One match: the pattern index, the root node's span and the captures.
+/// One capture: a slot plus the byte span it binds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Capture {
+    /// The capture slot (dense, per query).
+    pub slot: u8,
+    /// The bound byte span in the matched source.
+    pub span: Range<usize>,
+}
+
+/// One match: the pattern index plus its captures (deduplicated).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Match {
-    /// The pattern that matched.
+    /// Which compiled pattern matched.
     pub pattern: usize,
-    /// The root node's byte span.
-    pub span: Range<u32>,
-    /// `(capture id, span)` pairs in binding order, deduped.
-    pub captures: Vec<(u16, Range<u32>)>,
+    /// The matched node's byte span.
+    pub span: Range<usize>,
+    /// The captures (deduplicated, in emission order).
+    pub captures: Vec<Capture>,
 }
+
+/// A predicate argument at evaluation time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PredicateArg<'s> {
+    /// The captured text.
+    Capture(&'s str),
+    /// The literal from the query.
+    Text(&'s str),
+}
+
+/// The host's predicate closure: `name` without `#`/`?`; return `false`
+/// to drop the match.
+pub type PredicateFn<'p> = dyn FnMut(&str, &[PredicateArg<'_>]) -> bool + 'p;
 
 /// The streaming matcher.
-#[derive(Debug, Default)]
-pub struct QueryCursor {
-    /// The reusable child-run scratch (cleared per candidate; the
-    /// O(1)-alloc evidence — it never grows after the first candidate).
-    scratch: Vec<usize>,
+pub struct QueryCursor<'q> {
+    /// The compiled query.
+    pub query: &'q CompiledQuery,
+    /// The dedup set: `(slot, span)` pairs already emitted. Reused
+    /// across matches — steady-state matching allocates nothing.
+    seen: Vec<(u8, u32, u32)>,
 }
 
-/// One node from the packed stream.
-#[derive(Debug, Clone)]
-struct NodeView {
-    kind: u16,
-    span: Range<u32>,
-    children: Vec<usize>,
-}
-
-impl QueryCursor {
-    /// A fresh cursor (the scratch allocates on first use, then reuses).
+impl<'q> QueryCursor<'q> {
+    /// A cursor over a compiled query.
     #[must_use]
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(query: &'q CompiledQuery) -> Self {
+        Self {
+            query,
+            seen: Vec::new(),
+        }
     }
 
-    /// The scratch capacity — the O(1)-alloc evidence: it does not grow
-    /// across candidates.
-    #[must_use]
-    pub fn scratch_capacity(&self) -> usize {
-        self.scratch.capacity()
-    }
-
-    /// Find every match of `query` in the packed stream. `ranges` is the
-    /// clean token range table parallel to the Token steps; `source` is
-    /// the document text (predicate evaluation reads capture text).
-    #[must_use]
+    /// Run one pass over the packed stream, yielding every match whose
+    /// predicates hold. `ranges` is the token side table parallel to
+    /// the stream's token events; `source` supplies predicate texts.
+    /// `scratch` is cleared (not reallocated) per candidate — the
+    /// O(1)-alloc contract; its capacity is bounded by the pattern's
+    /// capture count.
     pub fn matches(
         &mut self,
-        query: &CompiledQuery,
         output: &Output,
-        ranges: &[Range<u32>],
+        ranges: &[(u16, Range<u32>)],
         source: &str,
+        scratch: &mut Vec<Capture>,
+        predicate: &mut PredicateFn<'_>,
     ) -> Vec<Match> {
-        let nodes = build_nodes(output, ranges);
         let mut matches = Vec::new();
-        for node_idx in 0..nodes.len() {
-            for (pidx, pattern) in query.patterns.iter().enumerate() {
-                let Some(root) = pattern.steps.first() else {
-                    continue;
-                };
-                let view = &nodes[node_idx];
-                // The O(1) kind prefilter.
-                if root.kind != WILDCARD && root.kind != view.kind {
-                    continue;
+        let mut stack: Vec<NodeFrame> = Vec::new();
+        let mut token_index = 0_usize;
+        for step in output.steps() {
+            match step {
+                Step::Enter { kind } => {
+                    stack.push(NodeFrame {
+                        kind,
+                        first_token: token_index,
+                        last_token: None,
+                        child_kinds: Vec::new(),
+                        child_spans: Vec::new(),
+                    });
                 }
-                if !bitset_allows(&root.prefilter, view.kind) {
-                    continue;
-                }
-                self.scratch.clear();
-                self.scratch.extend_from_slice(&nodes[node_idx].children);
-                let mut captures = Vec::new();
-                if let Some(cap) = root.capture {
-                    captures.push((cap, view.span.clone()));
-                }
-                if self.match_children(query, pidx, 1, &nodes, node_idx, &mut captures)
-                    && predicate_pass(query, pidx, &captures, source)
-                {
-                    // Capture dedup: keep the first (cap, span) pair.
-                    let mut seen: Vec<(u16, Range<u32>)> = Vec::new();
-                    for pair in captures {
-                        if !seen.contains(&pair) {
-                            seen.push(pair);
+                Step::Token { .. } => {
+                    let this_token = token_index;
+                    token_index += 1;
+                    if let Some(frame) = stack.last_mut() {
+                        frame.last_token = Some(this_token);
+                        // Token children join the node's child sequence.
+                        if let Some((kind, range)) = ranges.get(this_token) {
+                            frame.child_kinds.push(*kind);
+                            frame.child_spans.push(range.clone());
                         }
                     }
-                    matches.push(Match {
-                        pattern: pidx,
-                        span: view.span.clone(),
-                        captures: seen,
-                    });
+                }
+                Step::Error { .. } => {}
+                Step::Exit => {
+                    let Some(frame) = stack.pop() else {
+                        continue;
+                    };
+                    let span = frame.span(ranges, source.len());
+                    if let Some(parent) = stack.last_mut() {
+                        parent.child_kinds.push(frame.kind);
+                        let span32 = u32::try_from(span.start).unwrap_or(u32::MAX)
+                            ..u32::try_from(span.end).unwrap_or(u32::MAX);
+                        parent.child_spans.push(span32);
+                        if frame.last_token.is_some() {
+                            parent.last_token = frame.last_token;
+                        }
+                    }
+                    for (pattern_index, pattern) in self.query.patterns.iter().enumerate() {
+                        // O(1) kind prefilter.
+                        if !pattern.wildcard && pattern.kind != frame.kind {
+                            continue;
+                        }
+                        // Child matching with span binding — stack-only
+                        // backtracking; the assignment lands in scratch.
+                        let Some(bound) = match_children(&pattern.children, &frame) else {
+                            continue;
+                        };
+                        scratch.clear();
+                        if let Some(slot) = pattern.capture {
+                            scratch.push(Capture {
+                                slot,
+                                span: span.clone(),
+                            });
+                        }
+                        for (step, child_span) in pattern.children.iter().zip(&bound) {
+                            if let (Some(slot), Some(child)) = (step.capture, child_span) {
+                                scratch.push(Capture {
+                                    slot,
+                                    span: clamp_span(child, source.len()),
+                                });
+                            }
+                        }
+                        self.dedup(scratch);
+                        if !self.predicates_hold(scratch, source, predicate) {
+                            continue;
+                        }
+                        matches.push(Match {
+                            pattern: pattern_index,
+                            span: span.clone(),
+                            captures: scratch.clone(),
+                        });
+                    }
                 }
             }
         }
         matches
     }
 
-    /// Match the pattern's steps (starting at `step_idx`) against the
-    /// children of `node_idx`, with quantifier backtracking.
-    #[allow(clippy::self_only_used_in_recursion)] // the cursor is the shared match context
-    fn match_children(
-        &mut self,
-        query: &CompiledQuery,
-        pidx: usize,
-        step_idx: usize,
-        nodes: &[NodeView],
-        node_idx: usize,
-        captures: &mut Vec<(u16, Range<u32>)>,
-    ) -> bool {
-        let children = nodes[node_idx].children.clone();
-        self.match_sequence(query, pidx, step_idx, nodes, &children, 0, captures)
+    /// Dedup `scratch` in place (same slot + span emitted once).
+    fn dedup(&mut self, scratch: &mut Vec<Capture>) {
+        scratch.dedup_by(|a, b| a.slot == b.slot && a.span == b.span);
+        let mut unique: Vec<Capture> = Vec::with_capacity(scratch.len());
+        for capture in scratch.drain(..) {
+            let key = (
+                capture.slot,
+                u32::try_from(capture.span.start).unwrap_or(u32::MAX),
+                u32::try_from(capture.span.end).unwrap_or(u32::MAX),
+            );
+            if !self.seen.contains(&key) {
+                self.seen.push(key);
+                unique.push(capture);
+            }
+        }
+        *scratch = unique;
     }
 
-    /// Steps `step_idx..` against `children[pos..]`: each step consumes a
-    /// consecutive run of children within its quantifier bounds; extra
-    /// children at the tail are allowed (tree-sitter semantics).
-    #[allow(clippy::too_many_arguments, clippy::self_only_used_in_recursion)]
-    fn match_sequence(
+    /// Built-in predicates plus the host closure.
+    fn predicates_hold(
         &self,
-        query: &CompiledQuery,
-        pidx: usize,
-        step_idx: usize,
-        nodes: &[NodeView],
-        children: &[usize],
-        pos: usize,
-        captures: &mut Vec<(u16, Range<u32>)>,
+        captures: &[Capture],
+        source: &str,
+        predicate: &mut PredicateFn<'_>,
     ) -> bool {
-        let pattern = &query.patterns[pidx];
-        if step_idx >= pattern.steps.len() {
-            return true; // extra trailing children are fine
+        let text_of = |slot: u8| -> Option<&str> {
+            captures.iter().find(|c| c.slot == slot).map(|c| {
+                let start = c.span.start.min(source.len());
+                let end = c.span.end.min(source.len()).max(start);
+                &source[start..end]
+            })
+        };
+        for pred in &self.query.predicates {
+            let holds = match pred {
+                Predicate::Eq { capture, value } => {
+                    text_of(*capture).is_some_and(|text| text == value)
+                }
+                Predicate::NotEq { capture, value } => {
+                    text_of(*capture).is_none_or(|text| text != value)
+                }
+                Predicate::Custom { name, args, .. } => {
+                    let argv: Vec<PredicateArg<'_>> = args
+                        .iter()
+                        .map(|arg| match arg {
+                            crate::query::PredArgSpec::Capture(slot) => {
+                                PredicateArg::Capture(text_of(*slot).unwrap_or(""))
+                            }
+                            crate::query::PredArgSpec::Text(text) => PredicateArg::Text(text),
+                        })
+                        .collect();
+                    predicate(name, &argv)
+                }
+            };
+            if !holds {
+                return false;
+            }
         }
-        let step = &pattern.steps[step_idx];
-        let min = usize::from(step.min);
-        let max = usize::from(step.max).min(children.len() - pos);
-        // Greedy: k = max down to min consecutive matching children.
-        for k in (min..=max).rev() {
-            if pos + k > children.len() {
-                continue;
+        true
+    }
+}
+
+/// One open node buffered while its subtree streams by.
+struct NodeFrame {
+    /// The node's kind (from its `Enter` step).
+    kind: u16,
+    /// Index of the node's first token.
+    first_token: usize,
+    /// Index of the node's last token (None = zero-width so far).
+    last_token: Option<usize>,
+    /// The kinds of the node's direct children (tokens AND subnodes).
+    child_kinds: Vec<u16>,
+    /// The spans of those children, parallel to `child_kinds`.
+    child_spans: Vec<Range<u32>>,
+}
+
+impl NodeFrame {
+    /// The node's byte span: first token start .. last token end.
+    fn span(&self, ranges: &[(u16, Range<u32>)], source_len: usize) -> Range<usize> {
+        let clamp = |v: u32| -> usize { usize::try_from(v).unwrap_or(0).min(source_len) };
+        let Some((_, first)) = ranges.get(self.first_token) else {
+            return 0..0;
+        };
+        let start = clamp(first.start);
+        let end = self
+            .last_token
+            .and_then(|i| ranges.get(i))
+            .map_or(start, |(_, r)| clamp(r.end));
+        start..end.max(start)
+    }
+}
+
+/// Clamp a u32 span into the source.
+fn clamp_span(span: &Range<u32>, source_len: usize) -> Range<usize> {
+    let start = usize::try_from(span.start).unwrap_or(0).min(source_len);
+    let end = usize::try_from(span.end)
+        .unwrap_or(0)
+        .min(source_len)
+        .max(start);
+    start..end
+}
+
+/// Match the child steps against the buffered child sequence:
+/// subsequence matching in order, gaps allowed, quantifiers per step.
+/// Returns, per step, the span of the FIRST child it consumed (for
+/// capture binding) — pure backtracking over indices, no allocation.
+fn match_children(steps: &[ChildStep], frame: &NodeFrame) -> Option<Vec<Option<Range<u32>>>> {
+    let mut bound: Vec<Option<Range<u32>>> = vec![None; steps.len()];
+    if match_children_from(steps, 0, frame, 0, &mut bound) {
+        Some(bound)
+    } else {
+        None
+    }
+}
+
+/// Subsequence matching with gaps: a step consumes the next matching
+/// child (skipping non-matching ones — the gap discipline), honoring
+/// its quantifier; the capture binding follows the successful path.
+fn match_children_from(
+    steps: &[ChildStep],
+    step_index: usize,
+    frame: &NodeFrame,
+    child_index: usize,
+    bound: &mut [Option<Range<u32>>],
+) -> bool {
+    if step_index == steps.len() {
+        return true; // trailing gaps are fine
+    }
+    let step = &steps[step_index];
+    let zero_ok = matches!(step.quant, Quant::ZeroOrOne | Quant::ZeroOrMore);
+    if zero_ok && match_children_from(steps, step_index + 1, frame, child_index, bound) {
+        return true; // the step matches nothing
+    }
+    // Find the next matching child (skipping gaps), consume it, and
+    // continue on the step's quantifier path.
+    let mut k = child_index;
+    while k < frame.child_kinds.len() {
+        if step.kind == u16::MAX || frame.child_kinds[k] == step.kind {
+            let first_here = bound[step_index].is_none();
+            if first_here {
+                bound[step_index] = Some(frame.child_spans[k].clone());
             }
-            let mut ok = true;
-            let mut pushed = 0_usize;
-            for offset in 0..k {
-                let child = &nodes[children[pos + offset]];
-                if step.kind != WILDCARD && child.kind != step.kind {
-                    ok = false;
-                    break;
-                }
-                if !bitset_allows(&step.prefilter, child.kind) {
-                    ok = false;
-                    break;
-                }
-                if let Some(cap) = step.capture {
-                    captures.push((cap, child.span.clone()));
-                    pushed += 1;
-                }
+            // After consuming one child: repeatable quants may either
+            // move to the next step or consume more; the fixed quants
+            // always move on.
+            if match_children_from(steps, step_index + 1, frame, k + 1, bound) {
+                return true;
             }
-            if ok
-                && self.match_sequence(
-                    query,
-                    pidx,
-                    step_idx + 1,
-                    nodes,
-                    children,
-                    pos + k,
-                    captures,
-                )
+            if matches!(step.quant, Quant::ZeroOrMore | Quant::OneOrMore)
+                && match_children_from(steps, step_index, frame, k + 1, bound)
             {
                 return true;
             }
-            for _ in 0..pushed {
-                captures.pop();
+            if first_here {
+                bound[step_index] = None; // backtrack the binding
             }
         }
-        false
+        k += 1;
     }
-}
-
-/// One pass over the packed steps: the node table (kind, span, children).
-fn build_nodes(output: &Output, ranges: &[Range<u32>]) -> Vec<NodeView> {
-    let mut nodes: Vec<NodeView> = Vec::new();
-    let mut stack: Vec<usize> = Vec::new();
-    let mut range_idx = 0_usize;
-    for step in output.steps() {
-        match step {
-            Step::Enter { kind } => {
-                stack.push(nodes.len());
-                nodes.push(NodeView {
-                    kind,
-                    span: 0..0,
-                    children: Vec::new(),
-                });
-            }
-            Step::Exit => {
-                if let Some(idx) = stack.pop() {
-                    if let Some(&parent) = stack.last() {
-                        nodes[parent].children.push(idx);
-                    }
-                }
-            }
-            Step::Token { .. } => {
-                if let Some(range) = ranges.get(range_idx) {
-                    let range = range.clone();
-                    for &idx in &stack {
-                        let span = &mut nodes[idx].span;
-                        span.start = span.start.min(range.start);
-                        span.end = span.end.max(range.end);
-                    }
-                }
-                range_idx += 1;
-            }
-            Step::Error { .. } => {}
-        }
-    }
-    nodes
-}
-
-fn predicate_pass(
-    query: &CompiledQuery,
-    pidx: usize,
-    captures: &[(u16, Range<u32>)],
-    source: &str,
-) -> bool {
-    for (cap, expected) in &query.patterns[pidx].predicates {
-        let found = captures
-            .iter()
-            .find(|(c, _)| c == cap)
-            .map(|(_, span)| &source[span.start as usize..span.end as usize]);
-        if found != Some(expected.as_str()) {
-            return false;
-        }
-    }
-    true
+    false
 }
