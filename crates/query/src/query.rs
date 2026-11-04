@@ -505,6 +505,10 @@ impl Parser<'_> {
 
 /// Compile is folded into [`parse`] (the parser resolves and lowers in
 /// one pass); this alias documents the two-phase intent.
+///
+/// # Errors
+/// [`QueryError`] for malformed pattern syntax or unknown kind names
+/// (same diagnostics as [`parse`]).
 pub fn compile(text: &str, resolver: &dyn KindResolver) -> Result<CompiledQuery, QueryError> {
     parse(text, resolver)
 }
