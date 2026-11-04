@@ -192,6 +192,10 @@ impl Nfa {
     /// Merge fragments with target rebasing: state `i` of fragment `k`
     /// becomes `offsets[k] + i`, and all transitions / epsilon links /
     /// accept marks are shifted by the same base.
+    ///
+    /// # Panics
+    /// When the merged automaton exceeds `u32::MAX` states
+    /// (index-space exhaustion).
     #[must_use]
     pub fn merge(fragments: &[Fragment], pattern_of: &[u16]) -> Self {
         let mut transitions: Vec<Vec<(u32, u32, u32)>> = Vec::new();
