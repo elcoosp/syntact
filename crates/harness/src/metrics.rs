@@ -69,6 +69,11 @@ impl MutationStats {
 
 /// The JSON fixture grammar (same shape as the lr-shadow tests) — the
 /// calibration corpus's language.
+///
+/// # Panics
+/// Never for the shipped fixture: the `expect`s fire only if the
+/// static builder registrations are rejected (a programming error in
+/// this file, not input-dependent).
 #[must_use]
 pub fn json_fixture() -> Grammar {
     let mut b = GrammarBuilder::new("json-calibration");
@@ -237,6 +242,14 @@ pub type DriveOutcome = Result<(Vec<StateId>, Vec<Look>), (Vec<StateId>, Vec<Loo
 /// Drive the automaton over the token stream; on failure return the
 /// stack at the error point plus the remaining lookahead window.
 /// `Ok` when the stream is accepted.
+///
+/// # Errors
+/// The failure point `(stack, lookahead window)` when the stream is
+/// rejected by the automaton.
+///
+/// # Panics
+/// When the automaton's production table disagrees with the stack
+/// depth (an internal invariant; never input-dependent).
 pub fn drive_to_failure(auto: &Automaton, tokens: &[FixtureToken]) -> DriveOutcome {
     let mut stack = vec![auto.start];
     for (idx, token) in tokens.iter().enumerate() {
