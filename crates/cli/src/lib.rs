@@ -13,17 +13,20 @@
 //!   backend classification plus every LL(1) conflict site.
 //! - `conformance <FILES…>` — run the JSON pack over documents and gate
 //!   byte-faithfulness (`render(parse(x)) == x`).
+//! - `trace <PACK> <FILE>` — per-region recovery events (offset, kind,
+//!   repair ops, resync point) from the pack's reference parser plus,
+//!   for JSON, the shadow-automaton CPCT+ repair loop (issue 029).
 //!
 //! [`run`] is a pure function from arguments to an exit code, so the
 //! integration tests drive it directly.
-
-pub mod trace;
 
 use std::io::Read as _;
 
 use clap::{Parser as ClapParser, Subcommand};
 use gir_ir::Grammar;
 use runtime_core::input::Source;
+
+pub mod trace;
 
 /// The `syntact` command line.
 #[derive(Debug, ClapParser)]
@@ -61,11 +64,9 @@ pub enum Command {
         #[arg(value_name = "FILE", num_args = 1..)]
         files: Vec<String>,
     },
-    /// Trace a document: per-region recovery events (offset, repair ops,
-    /// resync point) — `--json` for tooling.
+    /// Print per-region recovery events for a document through a pack.
     Trace {
-        /// The pack whose recovery pipeline drives the trace (currently
-        /// `json`).
+        /// The pack to trace through (`json`, `toml`).
         #[arg(value_name = "PACK")]
         pack: String,
         /// The document to trace (`-` reads stdin).
@@ -242,22 +243,23 @@ fn cmd_conformance(files: &[String]) -> i32 {
 }
 
 fn cmd_trace(pack: &str, file: &str, json: bool) -> i32 {
-    if !pack.eq_ignore_ascii_case("json") {
-        eprintln!("trace: unsupported pack {pack:?} (only `json` is wired)");
-        return USAGE;
-    }
     let Ok(text) = read_input(file) else {
         return USAGE;
     };
-    let grammar = harness::metrics::json_fixture();
-    let trace = trace::trace_json(&text);
-    let report = if json {
-        trace::render_json(&grammar, &trace)
-    } else {
-        trace::render_text(&grammar, &trace)
-    };
-    print!("{report}");
-    if trace.complete { OK } else { FAIL }
+    match trace::trace(pack, &text) {
+        Ok(output) => {
+            if json {
+                print!("{}", trace::render_json(&output));
+            } else {
+                print!("{}", trace::render_text(&output));
+            }
+            if output.ok { OK } else { FAIL }
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            USAGE
+        }
+    }
 }
 
 /// Load a grammar from the KDL surface (issue 004 loader).
