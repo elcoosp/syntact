@@ -121,6 +121,10 @@ impl Differential {
 
 /// Minimal JSON hand lexer for the feed (same discipline as the packs:
 /// clean ranges, trivia excluded, garbage as one-char [`jk::BAD`] tokens).
+///
+/// # Panics
+/// When the source exceeds `u32::MAX` bytes (offsets no longer fit the
+/// fixture range type).
 #[must_use]
 pub fn lex_json(source: &str) -> Vec<(u16, Range<u32>)> {
     let bytes = source.as_bytes();
