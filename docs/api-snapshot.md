@@ -998,6 +998,9 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub const CAST: u16 = 22;
 - src/lib.rs: pub const TYPE_EXPR: u16 = 23;
 - src/lib.rs: pub const DECLARATOR: u16 = 24;
+- src/lib.rs: pub const SWITCH: u16 = 79;
+- src/lib.rs: pub const CASE_LABEL: u16 = 80;
+- src/lib.rs: pub const GOTO: u16 = 81;
 - src/lib.rs: pub mod token_kinds {
 - src/lib.rs: pub const NAME: u16 = 25;
 - src/lib.rs: pub const NUMBER: u16 = 26;
@@ -1248,6 +1251,16 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub const CARET_EQ: u16 = 93;
 - src/lib.rs: pub const WHITESPACE: u16 = 94;
 - src/lib.rs: pub const COMMENT: u16 = 95;
+- src/lib.rs: pub const WALRUS: u16 = 96;
+- src/lib.rs: pub mod node_kinds_ext {
+- src/lib.rs: pub const TRY: u16 = 97;
+- src/lib.rs: pub const EXCEPT: u16 = 98;
+- src/lib.rs: pub const WITH: u16 = 99;
+- src/lib.rs: pub const WITH_ITEM: u16 = 100;
+- src/lib.rs: pub const MATCH: u16 = 101;
+- src/lib.rs: pub const CASE: u16 = 102;
+- src/lib.rs: pub const SLICE: u16 = 103;
+- src/lib.rs: pub const LAMBDA: u16 = 104;
 - src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
 - src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
 - src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
@@ -1399,6 +1412,13 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub const STAR: u16 = 19;
 - src/lib.rs: pub const QUALIFIED: u16 = 20;
 - src/lib.rs: pub const IN_LIST: u16 = 21;
+- src/lib.rs: pub const COMPOUND: u16 = 47;
+- src/lib.rs: pub const ALTER: u16 = 48;
+- src/lib.rs: pub const DROP: u16 = 49;
+- src/lib.rs: pub const PRAGMA: u16 = 50;
+- src/lib.rs: pub const TXN: u16 = 51;
+- src/lib.rs: pub const CREATE_INDEX: u16 = 52;
+- src/lib.rs: pub const CREATE_VIEW: u16 = 53;
 - src/lib.rs: pub mod token_kinds {
 - src/lib.rs: pub const WORD: u16 = 22;
 - src/lib.rs: pub const NUMBER: u16 = 23;
@@ -1514,6 +1534,12 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub const TYPE_GROUP: u16 = 38;
 - src/lib.rs: pub const MEMBER: u16 = 39;
 - src/lib.rs: pub const TYPE_PARAM: u16 = 40;
+- src/lib.rs: pub const TYPE_FN: u16 = 105;
+- src/lib.rs: pub const SWITCH: u16 = 106;
+- src/lib.rs: pub const CASE_LABEL: u16 = 107;
+- src/lib.rs: pub const YIELD: u16 = 108;
+- src/lib.rs: pub const TRY: u16 = 109;
+- src/lib.rs: pub const DO_WHILE: u16 = 110;
 - src/lib.rs: pub mod token_kinds {
 - src/lib.rs: pub const NAME: u16 = 41;
 - src/lib.rs: pub const NUMBER: u16 = 42;
@@ -1577,6 +1603,8 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub const USHIFT_EQ: u16 = 100;
 - src/lib.rs: pub const WHITESPACE: u16 = 101;
 - src/lib.rs: pub const COMMENT: u16 = 102;
+- src/lib.rs: pub const QUESTION_DOT: u16 = 103;
+- src/lib.rs: pub const QUESTION_QUESTION: u16 = 104;
 - src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
 - src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
 - src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
