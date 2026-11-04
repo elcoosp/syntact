@@ -114,7 +114,7 @@ dependencies = [
 
 [[package]]
 name = "bench"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "criterion",
  "dhat",
@@ -226,7 +226,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "cli"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "clap",
  "codegen-rust",
@@ -234,17 +234,20 @@ dependencies = [
  "gir-ir",
  "gir-syntax",
  "harness",
+ "incremental",
  "lexgen",
  "lr-shadow",
  "packs-json",
  "packs-toml",
+ "pretty_assertions",
+ "query",
  "recovery",
  "runtime-core",
 ]
 
 [[package]]
 name = "codegen-rust"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gir-analysis",
  "gir-ir",
@@ -324,7 +327,7 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
 name = "descent"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "packs-json",
  "pretty_assertions",
@@ -397,18 +400,18 @@ checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
 name = "gir-analysis"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gir-ir",
 ]
 
 [[package]]
 name = "gir-ir"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "gir-syntax"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gir-ir",
  "kdl",
@@ -418,7 +421,7 @@ dependencies = [
 
 [[package]]
 name = "gir-transform"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gir-ir",
  "lr-shadow",
@@ -437,7 +440,7 @@ dependencies = [
 
 [[package]]
 name = "harness"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "descent",
  "gir-ir",
@@ -455,15 +458,16 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "importer"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gir-ir",
  "gir-syntax",
+ "pretty_assertions",
 ]
 
 [[package]]
 name = "incremental"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "packs-json",
  "packs-toml",
@@ -523,7 +527,7 @@ checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
 name = "lexgen"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gir-ir",
 ]
@@ -545,14 +549,14 @@ dependencies = [
 
 [[package]]
 name = "lr-shadow"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gir-ir",
 ]
 
 [[package]]
 name = "lsp"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "memchr"
@@ -629,7 +633,7 @@ checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "packs-c"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "pretty_assertions",
  "runtime-core",
@@ -637,7 +641,7 @@ dependencies = [
 
 [[package]]
 name = "packs-csv"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "pretty_assertions",
  "runtime-core",
@@ -645,7 +649,7 @@ dependencies = [
 
 [[package]]
 name = "packs-ini"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "pretty_assertions",
  "runtime-core",
@@ -653,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "packs-json"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "pretty_assertions",
  "runtime-core",
@@ -661,7 +665,7 @@ dependencies = [
 
 [[package]]
 name = "packs-markdown"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "pretty_assertions",
  "runtime-core",
@@ -669,7 +673,7 @@ dependencies = [
 
 [[package]]
 name = "packs-python"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "pretty_assertions",
  "runtime-core",
@@ -677,7 +681,7 @@ dependencies = [
 
 [[package]]
 name = "packs-rust"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "pretty_assertions",
  "runtime-core",
@@ -685,7 +689,7 @@ dependencies = [
 
 [[package]]
 name = "packs-sql"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "pretty_assertions",
  "runtime-core",
@@ -693,7 +697,7 @@ dependencies = [
 
 [[package]]
 name = "packs-toml"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "pretty_assertions",
  "runtime-core",
@@ -701,7 +705,7 @@ dependencies = [
 
 [[package]]
 name = "packs-typescript"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "pretty_assertions",
  "runtime-core",
@@ -748,9 +752,16 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "playground-server"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
+ "packs-c",
  "packs-json",
+ "packs-python",
+ "packs-rust",
+ "packs-sql",
+ "packs-toml",
+ "packs-typescript",
+ "pretty_assertions",
  "runtime-core",
 ]
 
@@ -803,7 +814,7 @@ dependencies = [
 
 [[package]]
 name = "query"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "packs-json",
  "runtime-core",
@@ -840,7 +851,7 @@ dependencies = [
 
 [[package]]
 name = "recovery"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gir-ir",
  "lr-shadow",
@@ -888,7 +899,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "runtime-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "simdutf8",
 ]
@@ -1001,7 +1012,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "structural-index"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "memchr",
 ]
@@ -1030,7 +1041,7 @@ dependencies = [
 
 [[package]]
 name = "syntact"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "clap",
  "cli",
