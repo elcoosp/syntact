@@ -107,6 +107,10 @@ struct PackDiag {
     /// Byte offset where parsing resumed (the sync token after the
     /// error region; source length when the failure was at EOF).
     resume: usize,
+    /// End of the diag's own error-token range: the resume fill only
+    /// fires on tokens starting at or after this (the error token
+    /// itself must not count as its own resync).
+    after: u32,
 }
 
 /// The JSON trace: pack diagnostics + the shadow-automaton repair loop.
@@ -168,45 +172,59 @@ fn trace_toml(source: &str) -> TraceOutput {
 
 /// Walk a pack event stream and collect every [`Event::Error`] with the
 /// offending token that follows it (the side-table `ranges` are
-/// parallel to the token events in DFS order). Errors at EOF carry no
-/// offending token: offset and resume are the source length.
+/// parallel to the token events in DFS order). Consecutive errors each
+/// attach to their own following token (nothing is dropped); a diag's
+/// resume is the first token starting at or after its error token's
+/// end. Errors at EOF carry no offending token: offset and resume are
+/// the source length.
 fn pack_diags(events: &[Event], ranges: &[(u16, Range<u32>)], source_len: usize) -> Vec<PackDiag> {
     let mut diags: Vec<PackDiag> = Vec::new();
     let mut token_idx = 0_usize;
-    let mut pending: Option<u32> = None;
-    let mut awaiting_resume = false;
+    let mut pending: Vec<u32> = Vec::new();
+    // Diag indices still awaiting their resume fill.
+    let mut awaiting: Vec<usize> = Vec::new();
     for event in events {
         match *event {
-            Event::Error { diag } => pending = Some(diag),
+            Event::Error { diag } => pending.push(diag),
             Event::Token { .. } => {
                 let Some((_, range)) = ranges.get(token_idx) else {
                     break; // malformed side table: stop collecting
                 };
                 let start = range.start as usize;
                 token_idx += 1;
-                if let Some(diag) = pending.take() {
+                for diag in pending.drain(..) {
                     diags.push(PackDiag {
                         offset: start,
                         diag,
                         resume: source_len,
+                        after: range.end,
                     });
-                    awaiting_resume = true;
-                } else if awaiting_resume {
-                    if let Some(last) = diags.last_mut() {
-                        last.resume = start;
-                    }
-                    awaiting_resume = false;
+                    awaiting.push(diags.len() - 1);
                 }
+                // The first token that starts at or after an error
+                // token's end is where parsing resumed; the error
+                // token itself (same start) keeps waiting.
+                awaiting.retain(|&i| {
+                    if start == diags[i].offset {
+                        return true;
+                    }
+                    if start >= diags[i].after as usize {
+                        diags[i].resume = start;
+                        return false;
+                    }
+                    true
+                });
             }
             Event::Start { .. } | Event::Finish => {}
         }
     }
-    // A pending error with no offending token: the failure was at EOF.
-    if let Some(diag) = pending {
+    // Pending errors with no offending token: the failure was at EOF.
+    for diag in pending {
         diags.push(PackDiag {
             offset: source_len,
             diag,
             resume: source_len,
+            after: u32::try_from(source_len).unwrap_or(u32::MAX),
         });
     }
     diags
