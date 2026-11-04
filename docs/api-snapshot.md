@@ -1,0 +1,1578 @@
+# API surface snapshot (issue 040)
+
+Frozen public-item inventory of every workspace crate (top-level
+`pub` declarations per source file, whitespace-normalized).
+Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
+--test api_snapshot` and commit the diff.
+
+## crates/bench
+
+- src/lib.rs: pub const VALIDATE_ALLOC_PER_KIB: usize = 1;
+- src/lib.rs: pub const SCAN_ALLOC_PER_KIB: usize = 2;
+- src/lib.rs: pub const SKELETON_ALLOC_PER_KIB: usize = 2;
+- src/lib.rs: pub const SMALL_DOC_MAX_ALLOCS: usize = 16;
+- src/lib.rs: pub const STEADY_DOC_MIN_BYTES: usize = 32 * 1024;
+- src/lib.rs: pub fn budgets_documented() -> Vec<(&'static str, usize, &'static str)> {
+- src/lib.rs: pub fn document_of(count: usize) -> String {
+- src/lib.rs: pub fn small_document() -> String {
+- src/lib.rs: pub fn medium_document() -> String {
+- src/lib.rs: pub fn steady_state_document() -> String {
+- src/lib.rs: pub fn kib(bytes: usize) -> usize {
+
+## crates/cli
+
+- src/lib.rs: pub mod trace;
+- src/lib.rs: pub struct Cli {
+- src/lib.rs: pub command: Command,
+- src/lib.rs: pub enum Command {
+- src/lib.rs: pub const OK: i32 = 0;
+- src/lib.rs: pub const FAIL: i32 = 1;
+- src/lib.rs: pub const USAGE: i32 = 2;
+- src/lib.rs: pub fn run<I, T>(args: I) -> Result<i32, String>
+- src/trace.rs: pub struct TraceOp {
+- src/trace.rs: pub op: &'static str,
+- src/trace.rs: pub token: String,
+- src/trace.rs: pub struct TraceRegion {
+- src/trace.rs: pub offset: usize,
+- src/trace.rs: pub kind: String,
+- src/trace.rs: pub ops: Vec<TraceOp>,
+- src/trace.rs: pub resync: usize,
+- src/trace.rs: pub struct TraceOutput {
+- src/trace.rs: pub pack: String,
+- src/trace.rs: pub source_len: usize,
+- src/trace.rs: pub ok: bool,
+- src/trace.rs: pub regions: Vec<TraceRegion>,
+- src/trace.rs: pub fn trace(pack: &str, source: &str) -> Result<TraceOutput, String> {
+- src/trace.rs: pub fn render_json(output: &TraceOutput) -> String {
+- src/trace.rs: pub fn render_text(output: &TraceOutput) -> String {
+
+## crates/codegen-rust
+
+- src/emit.rs: pub struct Emitter {
+- src/emit.rs: pub fn new(grammar_name: &str, grammar_version: &str) -> Self {
+- src/emit.rs: pub fn static_table(&mut self, name: &str, table: &CompactTable) {
+- src/emit.rs: pub fn const_u16(&mut self, name: &str, value: u16) {
+- src/emit.rs: pub fn const_u32(&mut self, name: &str, value: u32) {
+- src/emit.rs: pub fn lookup_fn(&mut self, fn_name: &str, table_name: &str) {
+- src/emit.rs: pub fn finish(self) -> String {
+- src/lib.rs: pub mod emit;
+- src/lib.rs: pub mod table;
+- src/lib.rs: pub use emit::Emitter;
+- src/lib.rs: pub use table::CompactTable;
+- src/table.rs: pub struct CompactTable {
+- src/table.rs: pub cells: Vec<u16>,
+- src/table.rs: pub bases: Vec<u32>,
+- src/table.rs: pub empty: u16,
+- src/table.rs: pub width: u16,
+- src/table.rs: pub fn from_rows(rows: &[Vec<Option<u16>>], empty: u16) -> Self {
+- src/table.rs: pub fn get(&self, row: usize, col: usize) -> Option<u16> {
+- src/table.rs: pub fn len(&self) -> usize {
+- src/table.rs: pub fn is_empty(&self) -> bool {
+- src/table.rs: pub fn storage_cells(&self) -> usize {
+
+## crates/descent
+
+- src/desc.rs: pub enum Pat {
+- src/desc.rs: pub struct RuleDesc {
+- src/desc.rs: pub node_kind: u16,
+- src/desc.rs: pub body: Pat,
+- src/desc.rs: pub sync: Vec<u16>,
+- src/desc.rs: pub mode_hook: Option<u16>,
+- src/desc.rs: pub struct PrattDesc {
+- src/desc.rs: pub atom: Pat,
+- src/desc.rs: pub group: Option<(u16, u16)>,
+- src/desc.rs: pub prefix: Vec<UnaryDesc>,
+- src/desc.rs: pub postfix: Vec<UnaryDesc>,
+- src/desc.rs: pub infix: Vec<InfixDesc>,
+- src/desc.rs: pub struct UnaryDesc {
+- src/desc.rs: pub token: u16,
+- src/desc.rs: pub node: u16,
+- src/desc.rs: pub bp: u8,
+- src/desc.rs: pub struct InfixDesc {
+- src/desc.rs: pub token: u16,
+- src/desc.rs: pub lbp: u8,
+- src/desc.rs: pub rbp: u8,
+- src/desc.rs: pub node: u16,
+- src/desc.rs: pub struct Desc {
+- src/desc.rs: pub rules: Vec<RuleDesc>,
+- src/desc.rs: pub exprs: Vec<PrattDesc>,
+- src/desc.rs: pub start: Pat,
+- src/desc.rs: pub fn rule(&self, id: u16) -> &RuleDesc {
+- src/desc.rs: pub fn expr(&self, id: u16) -> &PrattDesc {
+- src/engine.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/engine.rs: pub struct ModeCrossing {
+- src/engine.rs: pub mode: u16,
+- src/engine.rs: pub enter: bool,
+- src/engine.rs: pub at: usize,
+- src/engine.rs: pub struct Run {
+- src/engine.rs: pub events: Vec<Event>,
+- src/engine.rs: pub tokens: Vec<(u16, Range<u32>)>,
+- src/engine.rs: pub trivia: Vec<(Range<u32>, bool)>,
+- src/engine.rs: pub errors: usize,
+- src/engine.rs: pub modes: Vec<ModeCrossing>,
+- src/engine.rs: pub fn parse_events(desc: &Desc, feed: &[(u16, Range<u32>)], source: &str) -> Run {
+- src/lib.rs: pub mod desc;
+- src/lib.rs: pub mod engine;
+- src/lib.rs: pub use desc::{Desc, InfixDesc, Pat, PrattDesc, RuleDesc, UnaryDesc};
+- src/lib.rs: pub use engine::{ModeCrossing, Run, parse_events};
+- src/lib.rs: pub fn green_tree(
+- src/lib.rs: pub fn stream_is_balanced(run: &Run, source: &str, root_kind: u16) -> bool {
+
+## crates/gir-analysis
+
+- src/first_follow.rs: pub struct FirstSet {
+- src/first_follow.rs: pub tokens: BTreeSet<TokenId>,
+- src/first_follow.rs: pub nullable: bool,
+- src/first_follow.rs: pub opaque: bool,
+- src/first_follow.rs: pub const fn is_opaque(&self) -> bool {
+- src/first_follow.rs: pub fn of_token(token: TokenId) -> Self {
+- src/first_follow.rs: pub const fn epsilon() -> Self {
+- src/first_follow.rs: pub fn union(&mut self, other: &Self) -> bool {
+- src/first_follow.rs: pub struct LookSet {
+- src/first_follow.rs: pub tokens: BTreeSet<TokenId>,
+- src/first_follow.rs: pub eof: bool,
+- src/first_follow.rs: pub fn eof_only() -> Self {
+- src/first_follow.rs: pub fn insert(&mut self, token: TokenId) -> bool {
+- src/first_follow.rs: pub fn union(&mut self, other: &Self) -> bool {
+- src/first_follow.rs: pub struct FirstSets {
+- src/first_follow.rs: pub sets: Vec<FirstSet>,
+- src/first_follow.rs: pub fn compute(grammar: &Grammar) -> Self {
+- src/first_follow.rs: pub fn first(&self, id: RuleId) -> &FirstSet {
+- src/first_follow.rs: pub fn first_of(element: &Element, sets: &[FirstSet], out: &mut FirstSet) {
+- src/first_follow.rs: pub struct FollowSets {
+- src/first_follow.rs: pub sets: Vec<LookSet>,
+- src/first_follow.rs: pub fn compute(grammar: &Grammar, first: &FirstSets) -> Self {
+- src/first_follow.rs: pub fn follow(&self, id: RuleId) -> &LookSet {
+- src/lib.rs: pub mod first_follow;
+- src/lib.rs: pub mod ll1;
+- src/lib.rs: pub mod report;
+- src/lib.rs: pub use first_follow::{FirstSet, FirstSets, FollowSets, LookSet};
+- src/lib.rs: pub use ll1::{Conflict, Ll1Verdict, Obstruction};
+- src/lib.rs: pub use report::{Backend, ConflictSite, DeterminismReport, RuleVerdict, left_recursion};
+- src/ll1.rs: pub struct Conflict {
+- src/ll1.rs: pub token: TokenId,
+- src/ll1.rs: pub branches: (usize, usize),
+- src/ll1.rs: pub enum Obstruction {
+- src/ll1.rs: pub struct Ll1Verdict {
+- src/ll1.rs: pub ok: bool,
+- src/ll1.rs: pub obstruction: Option<Obstruction>,
+- src/ll1.rs: pub const fn pass() -> Self {
+- src/ll1.rs: pub fn ll1_verdicts(
+- src/report.rs: pub enum Backend {
+- src/report.rs: pub struct ConflictSite {
+- src/report.rs: pub rule: RuleId,
+- src/report.rs: pub token: gir_ir::TokenId,
+- src/report.rs: pub branches: (usize, usize),
+- src/report.rs: pub struct RuleVerdict {
+- src/report.rs: pub rule: RuleId,
+- src/report.rs: pub backend: Backend,
+- src/report.rs: pub ll1: bool,
+- src/report.rs: pub left_recursive: bool,
+- src/report.rs: pub reachable: bool,
+- src/report.rs: pub struct DeterminismReport {
+- src/report.rs: pub verdicts: Vec<RuleVerdict>,
+- src/report.rs: pub conflicts: Vec<ConflictSite>,
+- src/report.rs: pub fn compute(grammar: &Grammar) -> Self {
+- src/report.rs: pub fn backend_for(&self, rule: RuleId) -> Backend {
+- src/report.rs: pub fn all_deterministic(&self) -> bool {
+- src/report.rs: pub fn left_recursion(grammar: &Grammar) -> Vec<bool> {
+
+## crates/gir-ir
+
+- src/interner.rs: pub struct Sym(u32);
+- src/interner.rs: pub const fn index(self) -> u32 {
+- src/interner.rs: pub struct Interner {
+- src/interner.rs: pub fn new() -> Self {
+- src/interner.rs: pub fn intern(&mut self, s: &str) -> Sym {
+- src/interner.rs: pub fn lookup(&self, sym: Sym) -> &str {
+- src/interner.rs: pub fn len(&self) -> usize {
+- src/interner.rs: pub fn is_empty(&self) -> bool {
+- src/ir.rs: pub struct RuleId(pub u32);
+- src/ir.rs: pub struct TokenId(pub u16);
+- src/ir.rs: pub enum Element {
+- src/ir.rs: pub fn rule_refs(&self) -> BTreeSet<RuleId> {
+- src/ir.rs: pub fn token_refs(&self) -> BTreeSet<TokenId> {
+- src/ir.rs: pub enum TokenPattern {
+- src/ir.rs: pub struct TokenDef {
+- src/ir.rs: pub id: TokenId,
+- src/ir.rs: pub name: Sym,
+- src/ir.rs: pub pattern: TokenPattern,
+- src/ir.rs: pub trivia: bool,
+- src/ir.rs: pub node: bool,
+- src/ir.rs: pub index_bound: Option<String>,
+- src/ir.rs: pub enum Associativity {
+- src/ir.rs: pub struct PrattHint {
+- src/ir.rs: pub left_bp: u8,
+- src/ir.rs: pub right_bp: u8,
+- src/ir.rs: pub assoc: Associativity,
+- src/ir.rs: pub struct Rule {
+- src/ir.rs: pub id: RuleId,
+- src/ir.rs: pub name: Sym,
+- src/ir.rs: pub body: Element,
+- src/ir.rs: pub node: bool,
+- src/ir.rs: pub reuse: bool,
+- src/ir.rs: pub list: bool,
+- src/ir.rs: pub cold: bool,
+- src/ir.rs: pub fragile: bool,
+- src/ir.rs: pub wrap_error: bool,
+- src/ir.rs: pub pratt: Option<PrattHint>,
+- src/ir.rs: pub sync: Vec<TokenId>,
+- src/ir.rs: pub insert: Vec<TokenId>,
+- src/ir.rs: pub struct Grammar {
+- src/ir.rs: pub name: String,
+- src/ir.rs: pub version: String,
+- src/ir.rs: pub extensions: Vec<String>,
+- src/ir.rs: pub unicode: bool,
+- src/ir.rs: pub tokens: Vec<TokenDef>,
+- src/ir.rs: pub rules: Vec<Rule>,
+- src/ir.rs: pub start: RuleId,
+- src/ir.rs: pub interner: Interner,
+- src/ir.rs: pub fn try_rule(&self, id: RuleId) -> Option<&Rule> {
+- src/ir.rs: pub fn rule(&self, id: RuleId) -> &Rule {
+- src/ir.rs: pub fn try_token(&self, id: TokenId) -> Option<&TokenDef> {
+- src/ir.rs: pub fn token(&self, id: TokenId) -> &TokenDef {
+- src/ir.rs: pub fn rule_name(&self, id: RuleId) -> &str {
+- src/ir.rs: pub fn token_name(&self, id: TokenId) -> &str {
+- src/ir.rs: pub fn validate(&self) -> Result<(), IrError> {
+- src/ir.rs: pub fn unreachable_rules(&self) -> Vec<RuleId> {
+- src/ir.rs: pub enum IrError {
+- src/ir.rs: pub struct GrammarBuilder {
+- src/ir.rs: pub fn new(name: &str) -> Self {
+- src/ir.rs: pub fn version(&mut self, version: &str) -> &mut Self {
+- src/ir.rs: pub fn extension(&mut self, extension: &str) -> &mut Self {
+- src/ir.rs: pub fn unicode(&mut self) -> &mut Self {
+- src/ir.rs: pub fn token_lit(&mut self, name: &str, text: &str) -> Result<TokenId, IrError> {
+- src/ir.rs: pub fn token_re(&mut self, name: &str, regex: &str) -> Result<TokenId, IrError> {
+- src/ir.rs: pub fn set_trivia(&mut self, id: TokenId, trivia: bool) -> &mut Self {
+- src/ir.rs: pub fn set_node(&mut self, id: TokenId, node: bool) -> &mut Self {
+- src/ir.rs: pub fn set_index_bound(&mut self, id: TokenId, bound: &str) -> &mut Self {
+- src/ir.rs: pub fn declare_rule(&mut self, name: &str) -> Result<RuleId, IrError> {
+- src/ir.rs: pub fn set_body(&mut self, id: RuleId, body: Element) -> &mut Self {
+- src/ir.rs: pub fn rule_id(&self, name: &str) -> Option<RuleId> {
+- src/ir.rs: pub fn token_id(&self, name: &str) -> Option<TokenId> {
+- src/ir.rs: pub fn set_node_rule(&mut self, id: RuleId, node: bool) -> &mut Self {
+- src/ir.rs: pub fn set_reuse(&mut self, id: RuleId, reuse: bool) -> &mut Self {
+- src/ir.rs: pub fn set_list(&mut self, id: RuleId, list: bool) -> &mut Self {
+- src/ir.rs: pub fn set_wrap_error(&mut self, id: RuleId, wrap_error: bool) -> &mut Self {
+- src/ir.rs: pub fn set_pratt(&mut self, id: RuleId, hint: PrattHint) -> &mut Self {
+- src/ir.rs: pub fn add_sync(&mut self, id: RuleId, tokens: &[TokenId]) -> &mut Self {
+- src/ir.rs: pub fn set_insert(&mut self, id: RuleId, tokens: Vec<TokenId>) -> &mut Self {
+- src/ir.rs: pub fn seq(elements: Vec<Element>) -> Element {
+- src/ir.rs: pub fn alt(elements: Vec<Element>) -> Element {
+- src/ir.rs: pub fn opt(element: Element) -> Element {
+- src/ir.rs: pub fn rep0(element: Element) -> Element {
+- src/ir.rs: pub fn rep1(element: Element) -> Element {
+- src/ir.rs: pub fn rep(element: Element, min: u32, max: Option<u32>) -> Element {
+- src/ir.rs: pub fn and(element: Element) -> Element {
+- src/ir.rs: pub fn not(element: Element) -> Element {
+- src/ir.rs: pub fn rule_ref(id: RuleId) -> Element {
+- src/ir.rs: pub fn token_ref(id: TokenId) -> Element {
+- src/ir.rs: pub fn finish(self) -> Result<Grammar, IrError> {
+- src/lib.rs: pub mod interner;
+- src/lib.rs: pub mod ir;
+- src/lib.rs: pub use interner::{Interner, Sym};
+- src/lib.rs: pub use ir::{
+
+## crates/gir-syntax
+
+- src/doc.rs: pub struct LanguageMeta {
+- src/doc.rs: pub name: String,
+- src/doc.rs: pub version: String,
+- src/doc.rs: pub extensions: Vec<String>,
+- src/doc.rs: pub unicode: bool,
+- src/doc.rs: pub span: ByteSpan,
+- src/doc.rs: pub enum TokenKindSurf {
+- src/doc.rs: pub struct TokenDecl {
+- src/doc.rs: pub name: String,
+- src/doc.rs: pub kind: TokenKindSurf,
+- src/doc.rs: pub node: bool,
+- src/doc.rs: pub trivia: bool,
+- src/doc.rs: pub index_bound: Option<String>,
+- src/doc.rs: pub span: ByteSpan,
+- src/doc.rs: pub name_span: ByteSpan,
+- src/doc.rs: pub struct SeqEl {
+- src/doc.rs: pub item: ItemSurf,
+- src/doc.rs: pub marker: Option<Marker>,
+- src/doc.rs: pub span: ByteSpan,
+- src/doc.rs: pub enum ItemSurf {
+- src/doc.rs: pub enum Marker {
+- src/doc.rs: pub fn from_word(word: &str) -> Option<Self> {
+- src/doc.rs: pub const fn word(self) -> &'static str {
+- src/doc.rs: pub struct SepCfg {
+- src/doc.rs: pub element: String,
+- src/doc.rs: pub element_span: ByteSpan,
+- src/doc.rs: pub separator: String,
+- src/doc.rs: pub allow_trailing: bool,
+- src/doc.rs: pub enum RuleKindSurf {
+- src/doc.rs: pub struct RuleDecl {
+- src/doc.rs: pub name: String,
+- src/doc.rs: pub kind: RuleKindSurf,
+- src/doc.rs: pub node: bool,
+- src/doc.rs: pub reuse: bool,
+- src/doc.rs: pub wrap_error: bool,
+- src/doc.rs: pub pratt: Option<PrattHint>,
+- src/doc.rs: pub span: ByteSpan,
+- src/doc.rs: pub name_span: ByteSpan,
+- src/doc.rs: pub struct GirDoc {
+- src/doc.rs: pub language: LanguageMeta,
+- src/doc.rs: pub tokens: Vec<TokenDecl>,
+- src/doc.rs: pub rules: Vec<RuleDecl>,
+- src/error.rs: pub struct ByteSpan {
+- src/error.rs: pub start: usize,
+- src/error.rs: pub end: usize,
+- src/error.rs: pub fn new(start: usize, len: usize) -> Self {
+- src/error.rs: pub const fn empty(offset: usize) -> Self {
+- src/error.rs: pub fn slice<'a>(&self, source: &'a str) -> &'a str {
+- src/error.rs: pub enum SurfaceError {
+- src/lib.rs: pub mod doc;
+- src/lib.rs: pub mod error;
+- src/lib.rs: pub mod loader;
+- src/lib.rs: pub mod lower;
+- src/lib.rs: pub mod render;
+- src/lib.rs: pub use doc::{
+- src/lib.rs: pub use error::{ByteSpan, SurfaceError};
+- src/lib.rs: pub use loader::{RESERVED_MARKERS, load};
+- src/lib.rs: pub use lower::{assoc_word, load_grammar};
+- src/lib.rs: pub use render::render;
+- src/loader.rs: pub const RESERVED_MARKERS: [&str; 5] = ["opt", "rep", "rep1", "and", "not"];
+- src/loader.rs: pub fn load(text: &str) -> Result<GirDoc, SurfaceError> {
+- src/lower.rs: pub fn to_grammar(&self) -> Result<Grammar, SurfaceError> {
+- src/lower.rs: pub fn load_grammar(text: &str) -> Result<Grammar, SurfaceError> {
+- src/lower.rs: pub fn assoc_word(assoc: Associativity) -> &'static str {
+- src/render.rs: pub fn render(doc: &GirDoc) -> String {
+
+## crates/gir-transform
+
+- src/factor.rs: pub fn left_factor(grammar: &Grammar) -> Grammar {
+- src/inline.rs: pub fn inline_single_use(grammar: &Grammar) -> Grammar {
+- src/lib.rs: pub mod factor;
+- src/lib.rs: pub mod inline;
+- src/lib.rs: pub mod pratt;
+- src/lib.rs: pub use factor::left_factor;
+- src/lib.rs: pub use gir_ir::{Grammar, PrattHint};
+- src/lib.rs: pub use inline::inline_single_use;
+- src/lib.rs: pub use pratt::lower_pratt;
+- src/lib.rs: pub fn optimize(grammar: &Grammar) -> Grammar {
+- src/pratt.rs: pub fn lower_pratt(grammar: &Grammar) -> Grammar {
+
+## crates/harness
+
+- src/corpus.rs: pub struct Case {
+- src/corpus.rs: pub name: String,
+- src/corpus.rs: pub source: String,
+- src/corpus.rs: pub tolerated: usize,
+- src/corpus.rs: pub struct Corpus(Vec<Case>);
+- src/corpus.rs: pub struct CorpusError(pub String);
+- src/corpus.rs: pub fn parse(text: &str) -> Result<Self, CorpusError> {
+- src/corpus.rs: pub fn cases(&self) -> &[Case] {
+- src/corpus.rs: pub fn len(&self) -> usize {
+- src/corpus.rs: pub fn is_empty(&self) -> bool {
+- src/differential.rs: pub type Shape = Vec<ShapeStep>;
+- src/differential.rs: pub enum ShapeStep {
+- src/differential.rs: pub fn token_shape(tree: &GreenNode, trivia_kind: u16) -> Vec<ShapeStep> {
+- src/differential.rs: pub struct Differential {
+- src/differential.rs: pub mod jk {
+- src/differential.rs: pub const LBRACE: u16 = 8;
+- src/differential.rs: pub const RBRACE: u16 = 9;
+- src/differential.rs: pub const LBRACK: u16 = 10;
+- src/differential.rs: pub const RBRACK: u16 = 11;
+- src/differential.rs: pub const COLON: u16 = 12;
+- src/differential.rs: pub const COMMA: u16 = 13;
+- src/differential.rs: pub const WS: u16 = 14;
+- src/differential.rs: pub const BAD: u16 = 15;
+- src/differential.rs: pub fn json() -> Self {
+- src/differential.rs: pub fn compare(&self, source: &str) -> Result<Option<(Shape, Shape)>, String> {
+- src/differential.rs: pub fn agrees(&self, source: &str) -> Result<bool, String> {
+- src/differential.rs: pub fn lex_json(source: &str) -> Vec<(u16, Range<u32>)> {
+- src/differential.rs: pub fn json_desc() -> Desc {
+- src/lib.rs: pub mod corpus;
+- src/lib.rs: pub mod differential;
+- src/lib.rs: pub mod metrics;
+- src/lib.rs: pub mod runner;
+- src/lib.rs: pub use corpus::{Case, Corpus};
+- src/lib.rs: pub use differential::{Differential, token_shape};
+- src/lib.rs: pub use metrics::MutationStats;
+- src/lib.rs: pub use runner::{Report, Summary, run_corpus};
+- src/metrics.rs: pub const WINDOW: usize = 16;
+- src/metrics.rs: pub struct MutationStats {
+- src/metrics.rs: pub mutations: usize,
+- src/metrics.rs: pub no_error: usize,
+- src/metrics.rs: pub planned: usize,
+- src/metrics.rs: pub unplanned: usize,
+- src/metrics.rs: pub deterministic: usize,
+- src/metrics.rs: pub ops_within_two: usize,
+- src/metrics.rs: pub total_ops: usize,
+- src/metrics.rs: pub fn repair_rate(&self) -> f64 {
+- src/metrics.rs: pub fn determinism_rate(&self) -> f64 {
+- src/metrics.rs: pub fn mean_ops(&self) -> f64 {
+- src/metrics.rs: pub fn json_fixture() -> Grammar {
+- src/metrics.rs: pub struct FixtureToken {
+- src/metrics.rs: pub look: Look,
+- src/metrics.rs: pub range: std::ops::Range<usize>,
+- src/metrics.rs: pub fn lex_fixture(grammar: &Grammar, source: &str) -> Vec<FixtureToken> {
+- src/metrics.rs: pub type DriveOutcome = Result<(Vec<StateId>, Vec<Look>), (Vec<StateId>, Vec<Look>)>;
+- src/metrics.rs: pub fn drive_to_failure(auto: &Automaton, tokens: &[FixtureToken]) -> DriveOutcome {
+- src/metrics.rs: pub fn calibrate(sources: &[&str], budget: u32) -> MutationStats {
+- src/metrics.rs: pub struct ExpectedRepair {
+- src/metrics.rs: pub source: &'static str,
+- src/metrics.rs: pub ops: &'static [(&'static str, &'static str)],
+- src/metrics.rs: pub fn check_expected(auto: &Automaton, expected: &ExpectedRepair) -> Option<RepairPlan> {
+- src/runner.rs: pub struct Report {
+- src/runner.rs: pub name: String,
+- src/runner.rs: pub errors: usize,
+- src/runner.rs: pub tolerated: usize,
+- src/runner.rs: pub lossless: bool,
+- src/runner.rs: pub balanced: bool,
+- src/runner.rs: pub deterministic: bool,
+- src/runner.rs: pub pass: bool,
+- src/runner.rs: pub fn failure(&self) -> Option<&'static str> {
+- src/runner.rs: pub struct Summary {
+- src/runner.rs: pub total: usize,
+- src/runner.rs: pub passed: usize,
+- src/runner.rs: pub failed: usize,
+- src/runner.rs: pub fn all_green(&self) -> bool {
+- src/runner.rs: pub fn run_case(case: &Case) -> Report {
+- src/runner.rs: pub fn run_corpus(corpus: &crate::corpus::Corpus) -> (Vec<Report>, Summary) {
+
+## crates/importer
+
+- src/convert.rs: pub(super) fn convert(module: &Module) -> (GirDoc, ImportReport) {
+- src/lexer.rs: pub struct Token {
+- src/lexer.rs: pub tok: Tok,
+- src/lexer.rs: pub start: usize,
+- src/lexer.rs: pub end: usize,
+- src/lexer.rs: pub enum Tok {
+- src/lexer.rs: pub fn lex(src: &str) -> Result<Vec<Token>, ImportError> {
+- src/lib.rs: pub mod convert;
+- src/lib.rs: pub mod lexer;
+- src/lib.rs: pub mod parser;
+- src/lib.rs: pub mod wedge;
+- src/lib.rs: pub use wedge::{KindDiff, diff_kinds, kind_multiset};
+- src/lib.rs: pub enum Action {
+- src/lib.rs: pub struct ReportEntry {
+- src/lib.rs: pub construct: &'static str,
+- src/lib.rs: pub scope: String,
+- src/lib.rs: pub action: Action,
+- src/lib.rs: pub detail: String,
+- src/lib.rs: pub struct ImportReport {
+- src/lib.rs: pub entries: Vec<ReportEntry>,
+- src/lib.rs: pub fn push(&mut self, entry: ReportEntry) {
+- src/lib.rs: pub fn dropped(&self) -> usize {
+- src/lib.rs: pub fn has(&self, action: Action, construct: &str, scope: &str) -> bool {
+- src/lib.rs: pub fn contains_detail(&self, needle: &str) -> bool {
+- src/lib.rs: pub struct ImportOutput {
+- src/lib.rs: pub doc: GirDoc,
+- src/lib.rs: pub report: ImportReport,
+- src/lib.rs: pub enum ImportError {
+- src/lib.rs: pub fn import(src: &str) -> Result<ImportOutput, ImportError> {
+- src/lib.rs: pub fn kdl(src: &str) -> Result<String, ImportError> {
+- src/parser.rs: pub struct Spanned {
+- src/parser.rs: pub val: Val,
+- src/parser.rs: pub offset: usize,
+- src/parser.rs: pub enum Val {
+- src/parser.rs: pub struct Module {
+- src/parser.rs: pub props: Vec<(String, Spanned)>,
+- src/parser.rs: pub skipped: Vec<String>,
+- src/parser.rs: pub fn parse_module(tokens: &[Token]) -> Result<Module, ImportError> {
+- src/wedge.rs: pub fn kind_multiset(doc: &GirDoc) -> BTreeMap<String, u32> {
+- src/wedge.rs: pub struct KindDiff {
+- src/wedge.rs: pub missing: BTreeMap<String, u32>,
+- src/wedge.rs: pub extra: BTreeMap<String, u32>,
+- src/wedge.rs: pub fn diff_kinds(expected: &BTreeMap<String, u32>, actual: &BTreeMap<String, u32>) -> KindDiff {
+
+## crates/incremental
+
+- src/diff.rs: pub fn fnv1a(bytes: &[u8]) -> u64 {
+- src/diff.rs: pub fn changed_ranges(
+- src/edit.rs: pub struct Edit {
+- src/edit.rs: pub start: usize,
+- src/edit.rs: pub end: usize,
+- src/edit.rs: pub text: String,
+- src/edit.rs: pub fn insert(start: usize, text: impl Into<String>) -> Self {
+- src/edit.rs: pub fn delete(start: usize, end: usize) -> Self {
+- src/edit.rs: pub fn replace(start: usize, end: usize, text: impl Into<String>) -> Self {
+- src/edit.rs: pub fn normalize(mut self, source_len: usize) -> Self {
+- src/edit.rs: pub fn apply(&self, source: &str) -> String {
+- src/edit.rs: pub fn delta(&self) -> i64 {
+- src/engine.rs: pub trait Lexer {
+- src/engine.rs: pub struct ParseLexer<F: Fn(&str) -> Vec<(u16, Range<u32>)>> {
+- src/engine.rs: pub parse: F,
+- src/engine.rs: pub struct ContextHash(pub u64);
+- src/engine.rs: pub fn around(tokens: &[(u16, Range<u32>)], source: &str, index: usize) -> Option<Self> {
+- src/engine.rs: pub struct ReuseCursor {
+- src/engine.rs: pub index: usize,
+- src/engine.rs: pub context: ContextHash,
+- src/engine.rs: pub struct Stats {
+- src/engine.rs: pub fast_path_hits: usize,
+- src/engine.rs: pub fast_path_rejections: usize,
+- src/engine.rs: pub reused_tokens: usize,
+- src/engine.rs: pub fresh_tokens: usize,
+- src/engine.rs: pub enum Rejection {
+- src/engine.rs: pub struct Outcome {
+- src/engine.rs: pub tokens: Vec<(u16, Range<u32>)>,
+- src/engine.rs: pub stats: Stats,
+- src/engine.rs: pub rejection: Option<Rejection>,
+- src/engine.rs: pub changed: Vec<Range<usize>>,
+- src/engine.rs: pub struct Engine<'l> {
+- src/engine.rs: pub lexer: &'l dyn Lexer,
+- src/engine.rs: pub fn incremental_edit(
+- src/engine.rs: pub fn shift_range(range: &Range<u32>, delta: i64) -> Range<u32> {
+- src/engine.rs: pub fn reused_subtree_bytes(tokens: &[(u16, Range<u32>)], changed: &[Range<usize>]) -> usize {
+- src/lib.rs: pub mod diff;
+- src/lib.rs: pub mod edit;
+- src/lib.rs: pub mod engine;
+- src/lib.rs: pub use edit::Edit;
+- src/lib.rs: pub use engine::{
+
+## crates/lexgen
+
+- src/dfa.rs: pub struct CharClasses {
+- src/dfa.rs: pub starts: Vec<u32>,
+- src/dfa.rs: pub fn from_nfa(nfa: &Nfa) -> Self {
+- src/dfa.rs: pub fn len(&self) -> usize {
+- src/dfa.rs: pub fn is_empty(&self) -> bool {
+- src/dfa.rs: pub fn class_of(&self, c: u32) -> usize {
+- src/dfa.rs: pub fn interval(&self, class: usize) -> (u32, u32) {
+- src/dfa.rs: pub struct Dfa {
+- src/dfa.rs: pub transitions: Vec<Vec<Option<u32>>>,
+- src/dfa.rs: pub accept: Vec<Option<u16>>,
+- src/dfa.rs: pub start: u32,
+- src/dfa.rs: pub classes: CharClasses,
+- src/dfa.rs: pub fn from_nfa(nfa: &Nfa) -> Self {
+- src/dfa.rs: pub fn len(&self) -> usize {
+- src/dfa.rs: pub fn is_empty(&self) -> bool {
+- src/lib.rs: pub mod dfa;
+- src/lib.rs: pub mod masks;
+- src/lib.rs: pub mod modes;
+- src/lib.rs: pub mod nfa;
+- src/lib.rs: pub mod regex;
+- src/lib.rs: pub mod scan;
+- src/lib.rs: pub mod token_set;
+- src/lib.rs: pub use dfa::{CharClasses, Dfa};
+- src/lib.rs: pub use masks::{Entry, ExpectedMasks, MaskError};
+- src/lib.rs: pub use modes::{ModeAction, ModeLexer, ModeSpec, ModeToken};
+- src/lib.rs: pub use nfa::{Fragment, Nfa};
+- src/lib.rs: pub use regex::{LexError, Regex, parse_regex};
+- src/lib.rs: pub use scan::{Lexeme, Scanner, compile};
+- src/lib.rs: pub use token_set::{TOKEN_SET_CAP, TokenSet};
+- src/lib.rs: pub use gir_ir::TokenPattern;
+- src/masks.rs: pub struct Entry {
+- src/masks.rs: pub state: u32,
+- src/masks.rs: pub expected: TokenSet,
+- src/masks.rs: pub struct ExpectedMasks {
+- src/masks.rs: pub struct MaskError;
+- src/masks.rs: pub fn build(entries: &[Entry]) -> Result<Self, MaskError> {
+- src/masks.rs: pub fn lookup(&self, state: u32) -> Option<&Entry> {
+- src/masks.rs: pub fn lookup_linear(&self, state: u32) -> Option<&Entry> {
+- src/masks.rs: pub fn len(&self) -> usize {
+- src/masks.rs: pub fn is_empty(&self) -> bool {
+- src/masks.rs: pub fn entries(&self) -> Vec<Entry> {
+- src/modes.rs: pub enum ModeAction {
+- src/modes.rs: pub struct ModeToken {
+- src/modes.rs: pub kind: u16,
+- src/modes.rs: pub pattern: TokenPattern,
+- src/modes.rs: pub trivia: bool,
+- src/modes.rs: pub action: ModeAction,
+- src/modes.rs: pub struct ModeSpec {
+- src/modes.rs: pub tokens: Vec<ModeToken>,
+- src/modes.rs: pub struct ModeLexer {
+- src/modes.rs: pub fn new(specs: &[ModeSpec]) -> Result<Self, LexError> {
+- src/modes.rs: pub fn current(&self) -> u16 {
+- src/modes.rs: pub fn depth(&self) -> usize {
+- src/modes.rs: pub fn longest_match_in(
+- src/modes.rs: pub fn scan(&mut self, source: &str) -> Vec<Lexeme> {
+- src/modes.rs: pub fn mode_count(&self) -> usize {
+- src/nfa.rs: pub struct Fragment {
+- src/nfa.rs: pub transitions: Vec<Vec<(u32, u32, u32)>>,
+- src/nfa.rs: pub epsilon: Vec<Vec<u32>>,
+- src/nfa.rs: pub start: u32,
+- src/nfa.rs: pub accept: u32,
+- src/nfa.rs: pub struct Nfa {
+- src/nfa.rs: pub transitions: Vec<Vec<(u32, u32, u32)>>,
+- src/nfa.rs: pub epsilon: Vec<Vec<u32>>,
+- src/nfa.rs: pub start: u32,
+- src/nfa.rs: pub accepts: Vec<(u32, u16)>,
+- src/nfa.rs: pub fn build_fragment(regex: &Regex) -> Fragment {
+- src/nfa.rs: pub fn merge(fragments: &[Fragment], pattern_of: &[u16]) -> Self {
+- src/nfa.rs: pub fn closure(
+- src/nfa.rs: pub fn move_set(
+- src/nfa.rs: pub fn accept_of(&self, states: &std::collections::BTreeSet<u32>) -> Option<u16> {
+- src/nfa.rs: pub const SCALARS: u32 = SCALAR_END;
+- src/regex.rs: pub enum Regex {
+- src/regex.rs: pub struct LexError {
+- src/regex.rs: pub message: String,
+- src/regex.rs: pub position: usize,
+- src/regex.rs: pub const MAX_REPEAT: u32 = 256;
+- src/regex.rs: pub const SCALAR_END: u32 = 0x11_0000;
+- src/regex.rs: pub fn parse_regex(pattern: &str) -> Result<Regex, LexError> {
+- src/regex.rs: pub fn word_ranges() -> Vec<(u32, u32)> {
+- src/regex.rs: pub fn space_ranges() -> Vec<(u32, u32)> {
+- src/regex.rs: pub fn digit_ranges() -> Vec<(u32, u32)> {
+- src/regex.rs: pub fn negate_ranges(ranges: &[(u32, u32)]) -> Vec<(u32, u32)> {
+- src/regex.rs: pub fn normalize_ranges(ranges: &[(u32, u32)]) -> Vec<(u32, u32)> {
+- src/scan.rs: pub enum Lexeme {
+- src/scan.rs: pub struct Scanner {
+- src/scan.rs: pub fn compile(grammar: &Grammar) -> Result<Scanner, LexError> {
+- src/scan.rs: pub fn scan(&self, source: &str) -> Vec<Lexeme> {
+- src/scan.rs: pub fn longest_match(&self, source: &str, pos: usize) -> Option<(usize, u16)> {
+- src/scan.rs: pub fn relex_one(&self, source: &str, offset: usize) -> Option<Lexeme> {
+- src/scan.rs: pub fn token_count(&self) -> usize {
+- src/scan.rs: pub fn dfa_len(&self) -> usize {
+- src/token_set.rs: pub struct TokenSet([u64; 3]);
+- src/token_set.rs: pub const TOKEN_SET_CAP: u16 = 192;
+- src/token_set.rs: pub const fn new() -> Self {
+- src/token_set.rs: pub fn insert(&mut self, kind: u16) {
+- src/token_set.rs: pub fn contains(&self, kind: u16) -> bool {
+- src/token_set.rs: pub fn from_kinds(kinds: impl IntoIterator<Item = u16>) -> Self {
+- src/token_set.rs: pub fn kinds(&self) -> Vec<u16> {
+- src/token_set.rs: pub fn len(&self) -> usize {
+- src/token_set.rs: pub fn is_empty(&self) -> bool {
+- src/token_set.rs: pub fn union(mut self, other: Self) -> Self {
+
+## crates/lr-shadow
+
+- src/automaton.rs: pub struct Item {
+- src/automaton.rs: pub prod: u32,
+- src/automaton.rs: pub dot: u32,
+- src/automaton.rs: pub la: Look,
+- src/automaton.rs: pub struct StateId(pub u32);
+- src/automaton.rs: pub enum Action {
+- src/automaton.rs: pub struct Conflict {
+- src/automaton.rs: pub state: StateId,
+- src/automaton.rs: pub term: Look,
+- src/automaton.rs: pub kind: ConflictKind,
+- src/automaton.rs: pub enum ConflictKind {
+- src/automaton.rs: pub struct State {
+- src/automaton.rs: pub kernel: BTreeSet<Item>,
+- src/automaton.rs: pub actions: BTreeMap<Look, Action>,
+- src/automaton.rs: pub gotos: BTreeMap<NontermId, StateId>,
+- src/automaton.rs: pub struct Automaton {
+- src/automaton.rs: pub states: Vec<State>,
+- src/automaton.rs: pub conflicts: Vec<Conflict>,
+- src/automaton.rs: pub start: StateId,
+- src/automaton.rs: pub lowered: Lowered,
+- src/automaton.rs: pub fn build(grammar: &Grammar) -> Self {
+- src/automaton.rs: pub fn action(&self, state: StateId, term: Look) -> Option<&Action> {
+- src/automaton.rs: pub fn goto(&self, state: StateId, nt: NontermId) -> Option<StateId> {
+- src/automaton.rs: pub fn expected(&self, state: StateId) -> Vec<Look> {
+- src/automaton.rs: pub fn reachable(&self) -> Vec<bool> {
+- src/lib.rs: pub mod automaton;
+- src/lib.rs: pub mod lower;
+- src/lib.rs: pub use automaton::{Action, Automaton, Conflict, ConflictKind, Item, State, StateId};
+- src/lib.rs: pub use lower::{First, Look, Lowered, NontermId, Predicate, ProdKind, Production, Symbol};
+- src/lower.rs: pub struct Look(pub u32);
+- src/lower.rs: pub const EOF: Self = Self(u32::MAX);
+- src/lower.rs: pub const fn token(id: TokenId) -> Self {
+- src/lower.rs: pub const fn is_eof(self) -> bool {
+- src/lower.rs: pub fn as_token(self) -> Option<TokenId> {
+- src/lower.rs: pub struct NontermId(pub u32);
+- src/lower.rs: pub enum Symbol {
+- src/lower.rs: pub enum ProdKind {
+- src/lower.rs: pub struct Production {
+- src/lower.rs: pub lhs: NontermId,
+- src/lower.rs: pub symbols: Vec<Symbol>,
+- src/lower.rs: pub kind: ProdKind,
+- src/lower.rs: pub origin: Option<RuleId>,
+- src/lower.rs: pub struct Predicate {
+- src/lower.rs: pub positive: bool,
+- src/lower.rs: pub element: Element,
+- src/lower.rs: pub struct Lowered {
+- src/lower.rs: pub productions: Vec<Production>,
+- src/lower.rs: pub nonterms: u32,
+- src/lower.rs: pub start: NontermId,
+- src/lower.rs: pub predicates: BTreeMap<NontermId, Predicate>,
+- src/lower.rs: pub fn productions_of(&self, lhs: NontermId) -> Vec<u32> {
+- src/lower.rs: pub fn lower(grammar: &Grammar) -> Lowered {
+- src/lower.rs: pub struct First {
+- src/lower.rs: pub nullable: Vec<bool>,
+- src/lower.rs: pub first: Vec<BTreeSet<Look>>,
+- src/lower.rs: pub fn compute(lowered: &Lowered) -> Self {
+- src/lower.rs: pub fn first_of_suffix(suffix: &[Symbol], la: Look, first: &First) -> BTreeSet<Look> {
+
+## crates/lsp
+
+(no public items)
+
+## crates/playground-server
+
+- src/http.rs: pub enum ReqError {
+- src/http.rs: pub fn parse_request(buf: &[u8], max_body: usize) -> Result<crate::Request, ReqError> {
+- src/http.rs: pub fn serialize_response(resp: &crate::Response) -> Vec<u8> {
+- src/http.rs: pub struct Server {
+- src/http.rs: pub registry: Registry,
+- src/http.rs: pub max_body: usize,
+- src/http.rs: pub shutdown: Arc<AtomicBool>,
+- src/http.rs: pub poll: Duration,
+- src/http.rs: pub fn serve(&self, listener: &TcpListener) -> std::io::Result<()> {
+- src/lib.rs: pub mod http;
+- src/lib.rs: pub mod wire;
+- src/lib.rs: pub use http::{ReqError, Server, parse_request, serialize_response};
+- src/lib.rs: pub struct PackEntry {
+- src/lib.rs: pub name: &'static str,
+- src/lib.rs: pub parse: fn(&str) -> Result<Arc<GreenNode>, String>,
+- src/lib.rs: pub struct Registry {
+- src/lib.rs: pub fn new() -> Self {
+- src/lib.rs: pub fn register(&mut self, entry: PackEntry) {
+- src/lib.rs: pub fn reference() -> Self {
+- src/lib.rs: pub fn get(&self, name: &str) -> Option<&PackEntry> {
+- src/lib.rs: pub fn names(&self) -> Vec<&str> {
+- src/lib.rs: pub enum Method {
+- src/lib.rs: pub struct Request {
+- src/lib.rs: pub method: Method,
+- src/lib.rs: pub path: String,
+- src/lib.rs: pub body: Vec<u8>,
+- src/lib.rs: pub struct Response {
+- src/lib.rs: pub status: u16,
+- src/lib.rs: pub body: String,
+- src/lib.rs: pub fn route(registry: &Registry, max_body: usize, req: &Request) -> Response {
+- src/wire.rs: pub fn json_str(value: &str) -> String {
+- src/wire.rs: pub fn render_parse(pack: &str, tree: Result<Arc<GreenNode>, String>) -> String {
+- src/wire.rs: pub struct ExtractError;
+- src/wire.rs: pub fn extract_pack_source(body: &str) -> Result<(String, String), ExtractError> {
+
+## crates/query
+
+- src/cursor.rs: pub struct Capture {
+- src/cursor.rs: pub slot: u8,
+- src/cursor.rs: pub span: Range<usize>,
+- src/cursor.rs: pub struct Match {
+- src/cursor.rs: pub pattern: usize,
+- src/cursor.rs: pub span: Range<usize>,
+- src/cursor.rs: pub captures: Vec<Capture>,
+- src/cursor.rs: pub enum PredicateArg<'s> {
+- src/cursor.rs: pub type PredicateFn<'p> = dyn FnMut(&str, &[PredicateArg<'_>]) -> bool + 'p;
+- src/cursor.rs: pub struct QueryCursor<'q> {
+- src/cursor.rs: pub query: &'q CompiledQuery,
+- src/cursor.rs: pub fn new(query: &'q CompiledQuery) -> Self {
+- src/cursor.rs: pub fn matches(
+- src/lib.rs: pub mod cursor;
+- src/lib.rs: pub mod query;
+- src/lib.rs: pub use cursor::{Capture, Match, PredicateArg, PredicateFn, QueryCursor};
+- src/lib.rs: pub use query::{
+- src/query.rs: pub enum Quant {
+- src/query.rs: pub struct Child {
+- src/query.rs: pub kind: u16,
+- src/query.rs: pub wildcard: bool,
+- src/query.rs: pub capture: Option<u8>,
+- src/query.rs: pub quant: Quant,
+- src/query.rs: pub span: Range<usize>,
+- src/query.rs: pub struct QueryStep {
+- src/query.rs: pub kind: u16,
+- src/query.rs: pub wildcard: bool,
+- src/query.rs: pub capture: Option<u8>,
+- src/query.rs: pub children: Vec<ChildStep>,
+- src/query.rs: pub span: Range<usize>,
+- src/query.rs: pub struct ChildStep {
+- src/query.rs: pub kind: u16,
+- src/query.rs: pub capture: Option<u8>,
+- src/query.rs: pub quant: Quant,
+- src/query.rs: pub struct KindBitset(pub [u64; 4]);
+- src/query.rs: pub fn set(&mut self, kind: u16) {
+- src/query.rs: pub fn contains(&self, kind: u16) -> bool {
+- src/query.rs: pub enum Predicate {
+- src/query.rs: pub enum PredArgSpec {
+- src/query.rs: pub struct CompiledQuery {
+- src/query.rs: pub patterns: Vec<QueryStep>,
+- src/query.rs: pub predicates: Vec<Predicate>,
+- src/query.rs: pub prefilter: KindBitset,
+- src/query.rs: pub capture_count: u8,
+- src/query.rs: pub trait KindResolver {
+- src/query.rs: pub struct QueryError {
+- src/query.rs: pub message: String,
+- src/query.rs: pub span: Range<usize>,
+- src/query.rs: pub fn parse(text: &str, resolver: &dyn KindResolver) -> Result<CompiledQuery, QueryError> {
+- src/query.rs: pub fn compile(text: &str, resolver: &dyn KindResolver) -> Result<CompiledQuery, QueryError> {
+
+## crates/recovery
+
+- src/lib.rs: pub mod plan;
+- src/lib.rs: pub use plan::{CostModel, Planner, RepairOp, RepairPlan, SyncHints};
+- src/plan.rs: pub enum RepairOp {
+- src/plan.rs: pub struct RepairPlan {
+- src/plan.rs: pub ops: Vec<RepairOp>,
+- src/plan.rs: pub cost: u32,
+- src/plan.rs: pub struct CostModel {
+- src/plan.rs: pub insert: u32,
+- src/plan.rs: pub delete: u32,
+- src/plan.rs: pub shift: u32,
+- src/plan.rs: pub reduce: u32,
+- src/plan.rs: pub sync_delete: u32,
+- src/plan.rs: pub struct SyncHints(BTreeSet<Look>);
+- src/plan.rs: pub fn from_tokens(tokens: impl IntoIterator<Item = Look>) -> Self {
+- src/plan.rs: pub fn contains(&self, look: Look) -> bool {
+- src/plan.rs: pub fn tokens(&self) -> Vec<Look> {
+- src/plan.rs: pub struct Planner<'a> {
+- src/plan.rs: pub fn new(auto: &'a Automaton) -> Self {
+- src/plan.rs: pub fn with_cost_model(mut self, model: CostModel) -> Self {
+- src/plan.rs: pub fn with_sync_hints(mut self, sync: SyncHints) -> Self {
+- src/plan.rs: pub fn cost_model(&self) -> &CostModel {
+- src/plan.rs: pub fn plan(&self, stack: &[StateId], lookahead: &[Look], budget: u32) -> Option<RepairPlan> {
+
+## crates/runtime-core
+
+- src/diagnostic.rs: pub struct TokenSet {
+- src/diagnostic.rs: pub runs: [u64; 3],
+- src/diagnostic.rs: pub const EMPTY: Self = Self { runs: [0; 3] };
+- src/diagnostic.rs: pub fn single(kind: u16) -> Self {
+- src/diagnostic.rs: pub fn insert(&mut self, kind: u16) {
+- src/diagnostic.rs: pub fn contains(&self, kind: u16) -> bool {
+- src/diagnostic.rs: pub fn union(&mut self, other: &Self) {
+- src/diagnostic.rs: pub const fn intersect(&self, other: &Self) -> Self {
+- src/diagnostic.rs: pub const fn is_empty(&self) -> bool {
+- src/diagnostic.rs: pub fn kinds(&self) -> Vec<u16> {
+- src/diagnostic.rs: pub struct Diagnostic {
+- src/diagnostic.rs: pub message: String,
+- src/diagnostic.rs: pub range: std::ops::Range<u32>,
+- src/diagnostic.rs: pub struct DiagTable {
+- src/diagnostic.rs: pub fn push(&mut self, message: impl Into<String>, range: std::ops::Range<u32>) -> u32 {
+- src/diagnostic.rs: pub fn get(&self, idx: u32) -> Option<&Diagnostic> {
+- src/diagnostic.rs: pub fn len(&self) -> usize {
+- src/diagnostic.rs: pub fn is_empty(&self) -> bool {
+- src/diagnostic.rs: pub fn render(&self, idx: u32, source: &crate::input::Source<'_>) -> Option<String> {
+- src/events.rs: pub const TAG_ENTER: u64 = 1;
+- src/events.rs: pub const TAG_EXIT: u64 = 2;
+- src/events.rs: pub const TAG_TOKEN: u64 = 3;
+- src/events.rs: pub const TAG_ERROR: u64 = 4;
+- src/events.rs: pub const MAX_DIAG: u32 = (1 << 28) - 1;
+- src/events.rs: pub enum Event {
+- src/events.rs: pub enum Step {
+- src/events.rs: pub struct Output {
+- src/events.rs: pub stream: Vec<u64>,
+- src/events.rs: pub fn pack_enter(kind: u16) -> u64 {
+- src/events.rs: pub fn pack_exit() -> u64 {
+- src/events.rs: pub fn pack_token(kind: u16, n_raw: u8) -> u64 {
+- src/events.rs: pub fn pack_error(diag: u32) -> u64 {
+- src/events.rs: pub fn steps(&self) -> impl Iterator<Item = Step> + '_ {
+- src/events.rs: pub fn unpack_word(word: u64) -> Step {
+- src/events.rs: pub fn process(events: &[Event]) -> Result<Output, String> {
+- src/input.rs: pub struct Source<'s> {
+- src/input.rs: pub fn new(text: &'s str) -> Result<Self, String> {
+- src/input.rs: pub fn from_str_unchecked(text: &'s str) -> Self {
+- src/input.rs: pub fn text(&self) -> &'s str {
+- src/input.rs: pub fn len(&self) -> usize {
+- src/input.rs: pub fn is_empty(&self) -> bool {
+- src/input.rs: pub fn slice(&self, range: Range<u32>) -> &'s str {
+- src/input.rs: pub fn line_col(&self, offset: u32) -> (u32, u32) {
+- src/input.rs: pub fn line_text(&self, line: u32) -> &'s str {
+- src/input.rs: pub fn line_count(&self) -> u32 {
+- src/lib.rs: pub mod diagnostic;
+- src/lib.rs: pub mod events;
+- src/lib.rs: pub mod input;
+- src/lib.rs: pub mod persistent;
+- src/lib.rs: pub mod sink;
+- src/lib.rs: pub mod tree;
+- src/lib.rs: pub type NodeKind = u16;
+- src/lib.rs: pub type TokenKind = u16;
+- src/lib.rs: pub const ERROR_KIND: NodeKind = u16::MAX - 1;
+- src/lib.rs: pub const MISSING_KIND: NodeKind = u16::MAX - 2;
+- src/lib.rs: pub const EOF_KIND: TokenKind = u16::MAX;
+- src/persistent.rs: pub struct Version {
+- src/persistent.rs: pub number: u64,
+- src/persistent.rs: pub root: Arc<GreenNode>,
+- src/persistent.rs: pub struct RedHandle {
+- src/persistent.rs: pub fn new() -> Self {
+- src/persistent.rs: pub fn current(&self) -> Option<&Arc<GreenNode>> {
+- src/persistent.rs: pub fn version(&self) -> u64 {
+- src/persistent.rs: pub fn history(&self) -> &[Version] {
+- src/persistent.rs: pub fn publish(&mut self, root: Arc<GreenNode>) -> usize {
+- src/persistent.rs: pub fn count_shared(old: &Arc<GreenNode>, new: &Arc<GreenNode>) -> usize {
+- src/persistent.rs: pub struct Hit {
+- src/persistent.rs: pub kind: u16,
+- src/persistent.rs: pub span: Range<u32>,
+- src/persistent.rs: pub struct Chunk {
+- src/persistent.rs: pub first: usize,
+- src/persistent.rs: pub last: usize,
+- src/persistent.rs: pub span: Range<u32>,
+- src/persistent.rs: pub fn plan_chunks(tokens: &[(u16, Range<u32>)], target: usize) -> Vec<Chunk> {
+- src/persistent.rs: pub fn parallel_query(tokens: &[(u16, Range<u32>)], wanted: u16, workers: usize) -> Vec<Hit> {
+- src/persistent.rs: pub fn sequential_query(tokens: &[(u16, Range<u32>)], wanted: u16) -> Vec<Hit> {
+- src/sink.rs: pub trait Sink {
+- src/sink.rs: pub fn drive_sink(
+- src/sink.rs: pub struct TriviaRecord {
+- src/sink.rs: pub kind: crate::TokenKind,
+- src/sink.rs: pub range: Range<u32>,
+- src/sink.rs: pub trailing: bool,
+- src/sink.rs: pub struct ValidationSink {
+- src/sink.rs: pub nodes: u32,
+- src/sink.rs: pub tokens: u32,
+- src/sink.rs: pub errors: u32,
+- src/sink.rs: pub fn balanced(&self) -> bool {
+- src/sink.rs: pub fn summary(&self) -> ValidationSummary {
+- src/sink.rs: pub struct ValidationSummary {
+- src/sink.rs: pub nodes: u32,
+- src/sink.rs: pub tokens: u32,
+- src/sink.rs: pub errors: u32,
+- src/sink.rs: pub balanced: bool,
+- src/sink.rs: pub struct SkeletonNode {
+- src/sink.rs: pub kind: crate::NodeKind,
+- src/sink.rs: pub span: Range<u32>,
+- src/sink.rs: pub struct SkeletonSink {
+- src/sink.rs: pub nodes: Vec<SkeletonNode>,
+- src/sink.rs: pub struct TokenSink {
+- src/sink.rs: pub tokens: Vec<(crate::TokenKind, Range<u32>)>,
+- src/tree.rs: pub enum GreenChild {
+- src/tree.rs: pub fn text_len(&self) -> u32 {
+- src/tree.rs: pub fn has_error(&self) -> bool {
+- src/tree.rs: pub struct GreenNode {
+- src/tree.rs: pub kind: crate::NodeKind,
+- src/tree.rs: pub text_len: u32,
+- src/tree.rs: pub has_error: bool,
+- src/tree.rs: pub children: Vec<GreenChild>,
+- src/tree.rs: pub fn render(&self, source: &crate::input::Source<'_>) -> String {
+- src/tree.rs: pub fn node_count(&self) -> usize {
+- src/tree.rs: pub fn token_count(&self) -> usize {
+- src/tree.rs: pub fn token_ranges(&self) -> Vec<(crate::TokenKind, Range<u32>)> {
+- src/tree.rs: pub struct NodeCache {
+- src/tree.rs: pub fn new() -> Self {
+- src/tree.rs: pub struct TreeBuilder<'s> {
+- src/tree.rs: pub fn with_source(_cache: Arc<NodeCache>, source: &'s crate::input::Source<'s>) -> Self {
+- src/tree.rs: pub fn attach_trivia_records(&mut self, records: &[TriviaRecord]) {
+- src/tree.rs: pub fn attach_trivia_owned(&mut self, records: Vec<TriviaRecord>) {
+- src/tree.rs: pub fn finish(mut self) -> Result<Arc<GreenNode>, String> {
+
+## crates/structural-index
+
+- src/index.rs: pub enum RegionKind {
+- src/index.rs: pub fn from_u8(byte: u8) -> Self {
+- src/index.rs: pub struct RegionIndex {
+- src/index.rs: pub kinds: Vec<u8>,
+- src/index.rs: pub starts: Vec<u32>,
+- src/index.rs: pub ends: Vec<u32>,
+- src/index.rs: pub depths: Vec<u8>,
+- src/index.rs: pub fn new() -> Self {
+- src/index.rs: pub fn push(&mut self, kind: RegionKind, start: u32, end: u32, depth: u8) {
+- src/index.rs: pub fn len(&self) -> usize {
+- src/index.rs: pub fn is_empty(&self) -> bool {
+- src/index.rs: pub fn get(&self, index: usize) -> Option<(RegionKind, u32, u32, u8)> {
+- src/index.rs: pub fn iter(&self) -> impl Iterator<Item = (RegionKind, u32, u32, u8)> + '_ {
+- src/index.rs: pub fn depth_at(&self, offset: u32) -> u8 {
+- src/index.rs: pub fn bytes_per_region(&self) -> usize {
+- src/lib.rs: pub mod index;
+- src/lib.rs: pub mod plan;
+- src/lib.rs: pub mod scan;
+- src/lib.rs: pub use index::{RegionIndex, RegionKind};
+- src/lib.rs: pub use plan::{ChunkPlan, StructuralFault, plan_chunks, validate_fast};
+- src/lib.rs: pub use scan::{scan, scan_reference};
+- src/plan.rs: pub enum StructuralFault {
+- src/plan.rs: pub fn validate_fast(source: &str) -> Result<(), StructuralFault> {
+- src/plan.rs: pub struct ChunkPlan {
+- src/plan.rs: pub start: u32,
+- src/plan.rs: pub end: u32,
+- src/plan.rs: pub depth: u8,
+- src/plan.rs: pub fn plan_chunks(source: &str, index: &RegionIndex, target: usize) -> Vec<ChunkPlan> {
+- src/scan.rs: pub const BLOCK: usize = 64;
+- src/scan.rs: pub fn scan(source: &str) -> RegionIndex {
+- src/scan.rs: pub fn scan_reference(source: &str) -> RegionIndex {
+
+## crates/syntact
+
+(no public items)
+
+## packs/c
+
+- src/lib.rs: pub mod reference;
+- src/lib.rs: pub mod kinds {
+- src/lib.rs: pub const DECLARATION: u16 = 0;
+- src/lib.rs: pub const FUNCTION: u16 = 1;
+- src/lib.rs: pub const PARAMS: u16 = 2;
+- src/lib.rs: pub const RECORD: u16 = 3;
+- src/lib.rs: pub const MEMBER: u16 = 4;
+- src/lib.rs: pub const BLOCK: u16 = 5;
+- src/lib.rs: pub const IF: u16 = 6;
+- src/lib.rs: pub const ELSE: u16 = 7;
+- src/lib.rs: pub const WHILE: u16 = 8;
+- src/lib.rs: pub const FOR: u16 = 9;
+- src/lib.rs: pub const RETURN: u16 = 10;
+- src/lib.rs: pub const JUMP: u16 = 11;
+- src/lib.rs: pub const TYPEDEF: u16 = 12;
+- src/lib.rs: pub const PREPROC: u16 = 13;
+- src/lib.rs: pub const EXPR_STMT: u16 = 14;
+- src/lib.rs: pub const ASSIGN: u16 = 15;
+- src/lib.rs: pub const BINOP: u16 = 16;
+- src/lib.rs: pub const UNARY: u16 = 17;
+- src/lib.rs: pub const CONDITIONAL: u16 = 18;
+- src/lib.rs: pub const CALL: u16 = 19;
+- src/lib.rs: pub const INDEX: u16 = 20;
+- src/lib.rs: pub const MEMBER_ACCESS: u16 = 21;
+- src/lib.rs: pub const CAST: u16 = 22;
+- src/lib.rs: pub const TYPE_EXPR: u16 = 23;
+- src/lib.rs: pub const DECLARATOR: u16 = 24;
+- src/lib.rs: pub mod token_kinds {
+- src/lib.rs: pub const NAME: u16 = 25;
+- src/lib.rs: pub const NUMBER: u16 = 26;
+- src/lib.rs: pub const STRING: u16 = 27;
+- src/lib.rs: pub const CHAR: u16 = 28;
+- src/lib.rs: pub const LBRACE: u16 = 29;
+- src/lib.rs: pub const RBRACE: u16 = 30;
+- src/lib.rs: pub const LPAREN: u16 = 31;
+- src/lib.rs: pub const RPAREN: u16 = 32;
+- src/lib.rs: pub const LBRACKET: u16 = 33;
+- src/lib.rs: pub const RBRACKET: u16 = 34;
+- src/lib.rs: pub const SEMI: u16 = 35;
+- src/lib.rs: pub const COMMA: u16 = 36;
+- src/lib.rs: pub const COLON: u16 = 37;
+- src/lib.rs: pub const DOT: u16 = 38;
+- src/lib.rs: pub const ARROW: u16 = 39;
+- src/lib.rs: pub const QUESTION: u16 = 40;
+- src/lib.rs: pub const PLUS: u16 = 41;
+- src/lib.rs: pub const MINUS: u16 = 42;
+- src/lib.rs: pub const STAR: u16 = 43;
+- src/lib.rs: pub const SLASH: u16 = 44;
+- src/lib.rs: pub const PERCENT: u16 = 45;
+- src/lib.rs: pub const BANG: u16 = 46;
+- src/lib.rs: pub const AMP: u16 = 47;
+- src/lib.rs: pub const PIPE: u16 = 48;
+- src/lib.rs: pub const CARET: u16 = 49;
+- src/lib.rs: pub const TILDE: u16 = 50;
+- src/lib.rs: pub const EQ: u16 = 51;
+- src/lib.rs: pub const NEQ: u16 = 52;
+- src/lib.rs: pub const LE: u16 = 53;
+- src/lib.rs: pub const GE: u16 = 54;
+- src/lib.rs: pub const LT: u16 = 55;
+- src/lib.rs: pub const GT: u16 = 56;
+- src/lib.rs: pub const AND: u16 = 57;
+- src/lib.rs: pub const OR: u16 = 58;
+- src/lib.rs: pub const LSHIFT: u16 = 59;
+- src/lib.rs: pub const RSHIFT: u16 = 60;
+- src/lib.rs: pub const INCREMENT: u16 = 61;
+- src/lib.rs: pub const DECREMENT: u16 = 62;
+- src/lib.rs: pub const ASSIGN: u16 = 63;
+- src/lib.rs: pub const PLUSEQ: u16 = 64;
+- src/lib.rs: pub const MINUSEQ: u16 = 65;
+- src/lib.rs: pub const STAREQ: u16 = 66;
+- src/lib.rs: pub const SLASHEQ: u16 = 67;
+- src/lib.rs: pub const PERCENTEQ: u16 = 68;
+- src/lib.rs: pub const AMP_EQ: u16 = 69;
+- src/lib.rs: pub const PIPE_EQ: u16 = 70;
+- src/lib.rs: pub const CARET_EQ: u16 = 71;
+- src/lib.rs: pub const LSHIFT_EQ: u16 = 72;
+- src/lib.rs: pub const RSHIFT_EQ: u16 = 73;
+- src/lib.rs: pub const ELLIPSIS: u16 = 74;
+- src/lib.rs: pub const HASH: u16 = 75;
+- src/lib.rs: pub const WHITESPACE: u16 = 76;
+- src/lib.rs: pub const COMMENT: u16 = 77;
+- src/lib.rs: pub const BLOCK_COMMENT: u16 = 78;
+- src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
+- src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
+- src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
+- src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
+- src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
+
+## packs/csv
+
+- src/lib.rs: pub mod reference;
+- src/lib.rs: pub mod kinds {
+- src/lib.rs: pub const ROW: u16 = 0;
+- src/lib.rs: pub const FIELD: u16 = 1;
+- src/lib.rs: pub mod token_kinds {
+- src/lib.rs: pub const COMMA: u16 = 2;
+- src/lib.rs: pub const QUOTED: u16 = 3;
+- src/lib.rs: pub const BARE: u16 = 4;
+- src/lib.rs: pub const NEWLINE: u16 = 5;
+- src/lib.rs: pub const WHITESPACE: u16 = 6;
+- src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
+- src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
+- src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
+- src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
+- src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
+
+## packs/ini
+
+- src/lib.rs: pub mod reference;
+- src/lib.rs: pub mod kinds {
+- src/lib.rs: pub const SECTION: u16 = 0;
+- src/lib.rs: pub const SETTING: u16 = 1;
+- src/lib.rs: pub mod token_kinds {
+- src/lib.rs: pub const LBRACKET: u16 = 2;
+- src/lib.rs: pub const RBRACKET: u16 = 3;
+- src/lib.rs: pub const EQUALS: u16 = 4;
+- src/lib.rs: pub const BARE: u16 = 5;
+- src/lib.rs: pub const VALUE: u16 = 6;
+- src/lib.rs: pub const WHITESPACE: u16 = 7;
+- src/lib.rs: pub const COMMENT: u16 = 8;
+- src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
+- src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
+- src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
+- src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
+- src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
+
+## packs/json
+
+- src/lib.rs: pub mod reference;
+- src/lib.rs: pub mod kinds {
+- src/lib.rs: pub const OBJECT: u16 = 0;
+- src/lib.rs: pub const ARRAY: u16 = 1;
+- src/lib.rs: pub const PAIR: u16 = 2;
+- src/lib.rs: pub const STRING: u16 = 3;
+- src/lib.rs: pub const NUMBER: u16 = 4;
+- src/lib.rs: pub const TRUE: u16 = 5;
+- src/lib.rs: pub const FALSE: u16 = 6;
+- src/lib.rs: pub const NULL: u16 = 7;
+- src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
+- src/reference.rs: pub mod token_kinds {
+- src/reference.rs: pub const LBRACE: u16 = 8;
+- src/reference.rs: pub const RBRACE: u16 = 9;
+- src/reference.rs: pub const LBRACK: u16 = 10;
+- src/reference.rs: pub const RBRACK: u16 = 11;
+- src/reference.rs: pub const COLON: u16 = 12;
+- src/reference.rs: pub const COMMA: u16 = 13;
+- src/reference.rs: pub const WHITESPACE: u16 = 14;
+- src/reference.rs: pub const ROOT_KIND: u16 = u16::MAX - 3;
+- src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
+- src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
+- src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
+
+## packs/markdown
+
+- src/lib.rs: pub mod reference;
+- src/lib.rs: pub mod kinds {
+- src/lib.rs: pub const HEADING: u16 = 0;
+- src/lib.rs: pub const PARAGRAPH: u16 = 1;
+- src/lib.rs: pub mod token_kinds {
+- src/lib.rs: pub const ATX: u16 = 2;
+- src/lib.rs: pub const TEXT: u16 = 3;
+- src/lib.rs: pub const NEWLINE: u16 = 4;
+- src/lib.rs: pub const WHITESPACE: u16 = 5;
+- src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
+- src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
+- src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
+- src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
+- src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
+
+## packs/python
+
+- src/lib.rs: pub mod reference;
+- src/lib.rs: pub mod kinds {
+- src/lib.rs: pub const IF: u16 = 0;
+- src/lib.rs: pub const ELSE: u16 = 1;
+- src/lib.rs: pub const WHILE: u16 = 2;
+- src/lib.rs: pub const FOR: u16 = 3;
+- src/lib.rs: pub const FUNC_DEF: u16 = 4;
+- src/lib.rs: pub const CLASS_DEF: u16 = 5;
+- src/lib.rs: pub const DECORATED: u16 = 6;
+- src/lib.rs: pub const DECORATOR: u16 = 7;
+- src/lib.rs: pub const PARAMS: u16 = 8;
+- src/lib.rs: pub const SUITE: u16 = 9;
+- src/lib.rs: pub const RETURN: u16 = 10;
+- src/lib.rs: pub const PASS: u16 = 11;
+- src/lib.rs: pub const BREAK: u16 = 12;
+- src/lib.rs: pub const CONTINUE: u16 = 13;
+- src/lib.rs: pub const IMPORT: u16 = 14;
+- src/lib.rs: pub const FROM_IMPORT: u16 = 15;
+- src/lib.rs: pub const ALIAS: u16 = 16;
+- src/lib.rs: pub const DEL: u16 = 17;
+- src/lib.rs: pub const GLOBAL: u16 = 18;
+- src/lib.rs: pub const ASSERT: u16 = 19;
+- src/lib.rs: pub const RAISE: u16 = 20;
+- src/lib.rs: pub const ASSIGN: u16 = 21;
+- src/lib.rs: pub const AUG_ASSIGN: u16 = 22;
+- src/lib.rs: pub const EXPR_STMT: u16 = 23;
+- src/lib.rs: pub const BINOP: u16 = 24;
+- src/lib.rs: pub const UNARY: u16 = 25;
+- src/lib.rs: pub const COMPARE: u16 = 26;
+- src/lib.rs: pub const CONDITIONAL: u16 = 27;
+- src/lib.rs: pub const CALL: u16 = 28;
+- src/lib.rs: pub const ATTRIBUTE: u16 = 29;
+- src/lib.rs: pub const SUBSCRIPT: u16 = 30;
+- src/lib.rs: pub const TUPLE: u16 = 31;
+- src/lib.rs: pub const LIST: u16 = 32;
+- src/lib.rs: pub const SET: u16 = 33;
+- src/lib.rs: pub const DICT: u16 = 34;
+- src/lib.rs: pub const PAIR: u16 = 35;
+- src/lib.rs: pub const COMPREHENSION: u16 = 36;
+- src/lib.rs: pub const GENERATOR: u16 = 37;
+- src/lib.rs: pub const FSTRING: u16 = 38;
+- src/lib.rs: pub mod token_kinds {
+- src/lib.rs: pub const NAME: u16 = 39;
+- src/lib.rs: pub const NUMBER: u16 = 40;
+- src/lib.rs: pub const STRING: u16 = 41;
+- src/lib.rs: pub const FSTRING_START: u16 = 42;
+- src/lib.rs: pub const FSTRING_MIDDLE: u16 = 43;
+- src/lib.rs: pub const FSTRING_END: u16 = 44;
+- src/lib.rs: pub const INDENT: u16 = 45;
+- src/lib.rs: pub const DEDENT: u16 = 46;
+- src/lib.rs: pub const NEWLINE: u16 = 47;
+- src/lib.rs: pub const LPAREN: u16 = 48;
+- src/lib.rs: pub const RPAREN: u16 = 49;
+- src/lib.rs: pub const LBRACKET: u16 = 50;
+- src/lib.rs: pub const RBRACKET: u16 = 51;
+- src/lib.rs: pub const LBRACE: u16 = 52;
+- src/lib.rs: pub const RBRACE: u16 = 53;
+- src/lib.rs: pub const COLON: u16 = 54;
+- src/lib.rs: pub const SEMI: u16 = 55;
+- src/lib.rs: pub const COMMA: u16 = 56;
+- src/lib.rs: pub const DOT: u16 = 57;
+- src/lib.rs: pub const RARROW: u16 = 58;
+- src/lib.rs: pub const BANG: u16 = 59;
+- src/lib.rs: pub const PLUS: u16 = 60;
+- src/lib.rs: pub const MINUS: u16 = 61;
+- src/lib.rs: pub const STAR: u16 = 62;
+- src/lib.rs: pub const POWER: u16 = 63;
+- src/lib.rs: pub const SLASH: u16 = 64;
+- src/lib.rs: pub const DOUBLE_SLASH: u16 = 65;
+- src/lib.rs: pub const PERCENT: u16 = 66;
+- src/lib.rs: pub const AT_SIGN: u16 = 67;
+- src/lib.rs: pub const EQ: u16 = 68;
+- src/lib.rs: pub const NEQ: u16 = 69;
+- src/lib.rs: pub const LE: u16 = 70;
+- src/lib.rs: pub const GE: u16 = 71;
+- src/lib.rs: pub const LT: u16 = 72;
+- src/lib.rs: pub const GT: u16 = 73;
+- src/lib.rs: pub const AMP: u16 = 74;
+- src/lib.rs: pub const PIPE: u16 = 75;
+- src/lib.rs: pub const CARET: u16 = 76;
+- src/lib.rs: pub const TILDE: u16 = 77;
+- src/lib.rs: pub const LSHIFT: u16 = 78;
+- src/lib.rs: pub const RSHIFT: u16 = 79;
+- src/lib.rs: pub const EQUALS: u16 = 80;
+- src/lib.rs: pub const PLUSEQ: u16 = 81;
+- src/lib.rs: pub const MINUSEQ: u16 = 82;
+- src/lib.rs: pub const STAREQ: u16 = 83;
+- src/lib.rs: pub const SLASHEQ: u16 = 84;
+- src/lib.rs: pub const DOUBLE_SLASHEQ: u16 = 85;
+- src/lib.rs: pub const PERCENTEQ: u16 = 86;
+- src/lib.rs: pub const POWEREQ: u16 = 87;
+- src/lib.rs: pub const AT_SIGN_EQ: u16 = 88;
+- src/lib.rs: pub const LSHIFT_EQ: u16 = 89;
+- src/lib.rs: pub const RSHIFT_EQ: u16 = 90;
+- src/lib.rs: pub const AMP_EQ: u16 = 91;
+- src/lib.rs: pub const PIPE_EQ: u16 = 92;
+- src/lib.rs: pub const CARET_EQ: u16 = 93;
+- src/lib.rs: pub const WHITESPACE: u16 = 94;
+- src/lib.rs: pub const COMMENT: u16 = 95;
+- src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
+- src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
+- src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
+- src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
+- src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
+
+## packs/rust
+
+- src/lib.rs: pub mod reference;
+- src/lib.rs: pub mod kinds {
+- src/lib.rs: pub const FN: u16 = 0;
+- src/lib.rs: pub const STRUCT: u16 = 1;
+- src/lib.rs: pub const ENUM: u16 = 2;
+- src/lib.rs: pub const IMPL: u16 = 3;
+- src/lib.rs: pub const TRAIT: u16 = 4;
+- src/lib.rs: pub const MOD: u16 = 5;
+- src/lib.rs: pub const USE: u16 = 6;
+- src/lib.rs: pub const CONST: u16 = 7;
+- src/lib.rs: pub const TYPE_ALIAS: u16 = 8;
+- src/lib.rs: pub const MACRO: u16 = 9;
+- src/lib.rs: pub const TOKEN_TREE: u16 = 10;
+- src/lib.rs: pub const ATTR: u16 = 11;
+- src/lib.rs: pub const BLOCK: u16 = 12;
+- src/lib.rs: pub const GENERIC_PARAMS: u16 = 13;
+- src/lib.rs: pub const WHERE: u16 = 14;
+- src/lib.rs: pub const PARAMS: u16 = 15;
+- src/lib.rs: pub const LET: u16 = 16;
+- src/lib.rs: pub const EXPR_STMT: u16 = 17;
+- src/lib.rs: pub const IF: u16 = 18;
+- src/lib.rs: pub const ELSE: u16 = 19;
+- src/lib.rs: pub const WHILE: u16 = 20;
+- src/lib.rs: pub const FOR: u16 = 21;
+- src/lib.rs: pub const LOOP: u16 = 22;
+- src/lib.rs: pub const MATCH: u16 = 23;
+- src/lib.rs: pub const ARM: u16 = 24;
+- src/lib.rs: pub const RETURN: u16 = 25;
+- src/lib.rs: pub const BREAK: u16 = 26;
+- src/lib.rs: pub const CONTINUE: u16 = 27;
+- src/lib.rs: pub const CLOSURE: u16 = 28;
+- src/lib.rs: pub const RANGE: u16 = 29;
+- src/lib.rs: pub const TUPLE: u16 = 30;
+- src/lib.rs: pub const ARRAY: u16 = 31;
+- src/lib.rs: pub const INDEX: u16 = 32;
+- src/lib.rs: pub const CALL: u16 = 33;
+- src/lib.rs: pub const METHOD: u16 = 34;
+- src/lib.rs: pub const FIELD: u16 = 35;
+- src/lib.rs: pub const ASSIGN: u16 = 36;
+- src/lib.rs: pub const BINOP: u16 = 37;
+- src/lib.rs: pub const UNARY: u16 = 38;
+- src/lib.rs: pub const TRY: u16 = 39;
+- src/lib.rs: pub const STRUCT_LIT: u16 = 40;
+- src/lib.rs: pub const PAIR: u16 = 41;
+- src/lib.rs: pub const BODY: u16 = 42;
+- src/lib.rs: pub const MEMBER: u16 = 43;
+- src/lib.rs: pub const USE_TREE: u16 = 44;
+- src/lib.rs: pub mod token_kinds {
+- src/lib.rs: pub const NAME: u16 = 45;
+- src/lib.rs: pub const LIFETIME: u16 = 46;
+- src/lib.rs: pub const CHAR: u16 = 47;
+- src/lib.rs: pub const STRING: u16 = 48;
+- src/lib.rs: pub const NUMBER: u16 = 49;
+- src/lib.rs: pub const LBRACE: u16 = 50;
+- src/lib.rs: pub const RBRACE: u16 = 51;
+- src/lib.rs: pub const LPAREN: u16 = 52;
+- src/lib.rs: pub const RPAREN: u16 = 53;
+- src/lib.rs: pub const LBRACKET: u16 = 54;
+- src/lib.rs: pub const RBRACKET: u16 = 55;
+- src/lib.rs: pub const LT: u16 = 56;
+- src/lib.rs: pub const GT: u16 = 57;
+- src/lib.rs: pub const COMMA: u16 = 58;
+- src/lib.rs: pub const SEMI: u16 = 59;
+- src/lib.rs: pub const COLON: u16 = 60;
+- src/lib.rs: pub const COLON2: u16 = 61;
+- src/lib.rs: pub const DOT: u16 = 62;
+- src/lib.rs: pub const DOT2: u16 = 63;
+- src/lib.rs: pub const DOT2EQ: u16 = 64;
+- src/lib.rs: pub const RARROW: u16 = 65;
+- src/lib.rs: pub const FATARROW: u16 = 66;
+- src/lib.rs: pub const HASH: u16 = 67;
+- src/lib.rs: pub const BANG: u16 = 68;
+- src/lib.rs: pub const AMP: u16 = 69;
+- src/lib.rs: pub const AND: u16 = 70;
+- src/lib.rs: pub const PIPE: u16 = 71;
+- src/lib.rs: pub const OR: u16 = 72;
+- src/lib.rs: pub const PLUS: u16 = 73;
+- src/lib.rs: pub const MINUS: u16 = 74;
+- src/lib.rs: pub const STAR: u16 = 75;
+- src/lib.rs: pub const SLASH: u16 = 76;
+- src/lib.rs: pub const PERCENT: u16 = 77;
+- src/lib.rs: pub const CARET: u16 = 78;
+- src/lib.rs: pub const TILDE: u16 = 79;
+- src/lib.rs: pub const AT: u16 = 80;
+- src/lib.rs: pub const UNDERSCORE: u16 = 81;
+- src/lib.rs: pub const EQ: u16 = 82;
+- src/lib.rs: pub const NEQ: u16 = 83;
+- src/lib.rs: pub const LE: u16 = 84;
+- src/lib.rs: pub const GE: u16 = 85;
+- src/lib.rs: pub const ASSIGN: u16 = 86;
+- src/lib.rs: pub const PLUSEQ: u16 = 87;
+- src/lib.rs: pub const MINUSEQ: u16 = 88;
+- src/lib.rs: pub const STAREQ: u16 = 89;
+- src/lib.rs: pub const SLASHEQ: u16 = 90;
+- src/lib.rs: pub const PERCENTEQ: u16 = 91;
+- src/lib.rs: pub const CARETEQ: u16 = 92;
+- src/lib.rs: pub const AMP_EQ: u16 = 93;
+- src/lib.rs: pub const PIPE_EQ: u16 = 94;
+- src/lib.rs: pub const LSHIFT_EQ: u16 = 95;
+- src/lib.rs: pub const SHIFT_EQ: u16 = 96;
+- src/lib.rs: pub const LSHIFT: u16 = 97;
+- src/lib.rs: pub const SHIFT: u16 = 98;
+- src/lib.rs: pub const QUESTION: u16 = 99;
+- src/lib.rs: pub const DOLLAR: u16 = 100;
+- src/lib.rs: pub const WHITESPACE: u16 = 101;
+- src/lib.rs: pub const COMMENT: u16 = 102;
+- src/lib.rs: pub const BLOCK_COMMENT: u16 = 103;
+- src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
+- src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
+- src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
+- src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
+- src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
+
+## packs/sql
+
+- src/lib.rs: pub mod reference;
+- src/lib.rs: pub mod kinds {
+- src/lib.rs: pub const STATEMENT: u16 = 0;
+- src/lib.rs: pub const CTE: u16 = 1;
+- src/lib.rs: pub const SELECT: u16 = 2;
+- src/lib.rs: pub const SELECT_ITEM: u16 = 3;
+- src/lib.rs: pub const SOURCE: u16 = 4;
+- src/lib.rs: pub const CLAUSE: u16 = 5;
+- src/lib.rs: pub const INSERT: u16 = 6;
+- src/lib.rs: pub const UPDATE: u16 = 7;
+- src/lib.rs: pub const DELETE: u16 = 8;
+- src/lib.rs: pub const CREATE_TABLE: u16 = 9;
+- src/lib.rs: pub const COLUMN_DEF: u16 = 10;
+- src/lib.rs: pub const ALIAS: u16 = 11;
+- src/lib.rs: pub const CASE: u16 = 12;
+- src/lib.rs: pub const WHEN: u16 = 13;
+- src/lib.rs: pub const SUBQUERY: u16 = 14;
+- src/lib.rs: pub const CALL: u16 = 15;
+- src/lib.rs: pub const BINOP: u16 = 16;
+- src/lib.rs: pub const UNARY: u16 = 17;
+- src/lib.rs: pub const GROUP: u16 = 18;
+- src/lib.rs: pub const STAR: u16 = 19;
+- src/lib.rs: pub const QUALIFIED: u16 = 20;
+- src/lib.rs: pub const IN_LIST: u16 = 21;
+- src/lib.rs: pub mod token_kinds {
+- src/lib.rs: pub const WORD: u16 = 22;
+- src/lib.rs: pub const NUMBER: u16 = 23;
+- src/lib.rs: pub const STRING: u16 = 24;
+- src/lib.rs: pub const BRACKET_IDENT: u16 = 25;
+- src/lib.rs: pub const LPAREN: u16 = 26;
+- src/lib.rs: pub const RPAREN: u16 = 27;
+- src/lib.rs: pub const COMMA: u16 = 28;
+- src/lib.rs: pub const SEMI: u16 = 29;
+- src/lib.rs: pub const DOT: u16 = 30;
+- src/lib.rs: pub const STAR: u16 = 31;
+- src/lib.rs: pub const EQUALS: u16 = 32;
+- src/lib.rs: pub const NEQ: u16 = 33;
+- src/lib.rs: pub const NEQ2: u16 = 34;
+- src/lib.rs: pub const LT: u16 = 35;
+- src/lib.rs: pub const LE: u16 = 36;
+- src/lib.rs: pub const GT: u16 = 37;
+- src/lib.rs: pub const GE: u16 = 38;
+- src/lib.rs: pub const PLUS: u16 = 39;
+- src/lib.rs: pub const MINUS: u16 = 40;
+- src/lib.rs: pub const SLASH: u16 = 41;
+- src/lib.rs: pub const PERCENT: u16 = 42;
+- src/lib.rs: pub const CONCAT: u16 = 43;
+- src/lib.rs: pub const WHITESPACE: u16 = 44;
+- src/lib.rs: pub const COMMENT: u16 = 45;
+- src/lib.rs: pub const BLOCK_COMMENT: u16 = 46;
+- src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
+- src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
+- src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
+- src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
+- src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
+
+## packs/toml
+
+- src/lib.rs: pub mod reference;
+- src/lib.rs: pub mod kinds {
+- src/lib.rs: pub const TABLE: u16 = 0;
+- src/lib.rs: pub const ARRAY_TABLE: u16 = 1;
+- src/lib.rs: pub const KEY_VALUE: u16 = 2;
+- src/lib.rs: pub const KEY: u16 = 3;
+- src/lib.rs: pub const ARRAY: u16 = 4;
+- src/lib.rs: pub const INLINE_TABLE: u16 = 5;
+- src/lib.rs: pub mod token_kinds {
+- src/lib.rs: pub const BARE_KEY: u16 = 6;
+- src/lib.rs: pub const STRING: u16 = 7;
+- src/lib.rs: pub const INTEGER: u16 = 8;
+- src/lib.rs: pub const FLOAT: u16 = 9;
+- src/lib.rs: pub const BOOLEAN: u16 = 10;
+- src/lib.rs: pub const DATETIME: u16 = 11;
+- src/lib.rs: pub const LBRACKET: u16 = 12;
+- src/lib.rs: pub const RBRACKET: u16 = 13;
+- src/lib.rs: pub const LDOUBLE: u16 = 14;
+- src/lib.rs: pub const RDOUBLE: u16 = 15;
+- src/lib.rs: pub const EQUALS: u16 = 16;
+- src/lib.rs: pub const DOT: u16 = 17;
+- src/lib.rs: pub const COMMA: u16 = 18;
+- src/lib.rs: pub const LBRACE: u16 = 19;
+- src/lib.rs: pub const RBRACE: u16 = 20;
+- src/lib.rs: pub const WHITESPACE: u16 = 21;
+- src/lib.rs: pub const COMMENT: u16 = 22;
+- src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
+- src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
+- src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
+- src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
+- src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
+
+## packs/typescript
+
+- src/lib.rs: pub mod reference;
+- src/lib.rs: pub mod kinds {
+- src/lib.rs: pub const IMPORT: u16 = 0;
+- src/lib.rs: pub const EXPORT: u16 = 1;
+- src/lib.rs: pub const ALIAS: u16 = 2;
+- src/lib.rs: pub const INTERFACE: u16 = 3;
+- src/lib.rs: pub const TYPE_ALIAS: u16 = 4;
+- src/lib.rs: pub const CLASS: u16 = 5;
+- src/lib.rs: pub const ENUM: u16 = 6;
+- src/lib.rs: pub const FUNCTION: u16 = 7;
+- src/lib.rs: pub const PARAMS: u16 = 8;
+- src/lib.rs: pub const BLOCK: u16 = 9;
+- src/lib.rs: pub const FIELD: u16 = 10;
+- src/lib.rs: pub const METHOD: u16 = 11;
+- src/lib.rs: pub const IF: u16 = 12;
+- src/lib.rs: pub const ELSE: u16 = 13;
+- src/lib.rs: pub const WHILE: u16 = 14;
+- src/lib.rs: pub const FOR: u16 = 15;
+- src/lib.rs: pub const RETURN: u16 = 16;
+- src/lib.rs: pub const BREAK: u16 = 17;
+- src/lib.rs: pub const CONTINUE: u16 = 18;
+- src/lib.rs: pub const THROW: u16 = 19;
+- src/lib.rs: pub const VAR_DECL: u16 = 20;
+- src/lib.rs: pub const EXPR_STMT: u16 = 21;
+- src/lib.rs: pub const ASSIGN: u16 = 22;
+- src/lib.rs: pub const BINOP: u16 = 23;
+- src/lib.rs: pub const UNARY: u16 = 24;
+- src/lib.rs: pub const CONDITIONAL: u16 = 25;
+- src/lib.rs: pub const CALL: u16 = 26;
+- src/lib.rs: pub const ATTRIBUTE: u16 = 27;
+- src/lib.rs: pub const INDEX: u16 = 28;
+- src/lib.rs: pub const ARROW: u16 = 29;
+- src/lib.rs: pub const TEMPLATE: u16 = 30;
+- src/lib.rs: pub const ARRAY: u16 = 31;
+- src/lib.rs: pub const OBJECT: u16 = 32;
+- src/lib.rs: pub const PAIR: u16 = 33;
+- src/lib.rs: pub const TYPE_REF: u16 = 34;
+- src/lib.rs: pub const TYPE_UNION: u16 = 35;
+- src/lib.rs: pub const TYPE_ARRAY: u16 = 36;
+- src/lib.rs: pub const TYPE_TUPLE: u16 = 37;
+- src/lib.rs: pub const TYPE_GROUP: u16 = 38;
+- src/lib.rs: pub const MEMBER: u16 = 39;
+- src/lib.rs: pub const TYPE_PARAM: u16 = 40;
+- src/lib.rs: pub mod token_kinds {
+- src/lib.rs: pub const NAME: u16 = 41;
+- src/lib.rs: pub const NUMBER: u16 = 42;
+- src/lib.rs: pub const STRING: u16 = 43;
+- src/lib.rs: pub const TEMPLATE_START: u16 = 44;
+- src/lib.rs: pub const TEMPLATE_MIDDLE: u16 = 45;
+- src/lib.rs: pub const TEMPLATE_END: u16 = 46;
+- src/lib.rs: pub const LBRACE: u16 = 47;
+- src/lib.rs: pub const RBRACE: u16 = 48;
+- src/lib.rs: pub const LPAREN: u16 = 49;
+- src/lib.rs: pub const RPAREN: u16 = 50;
+- src/lib.rs: pub const LBRACKET: u16 = 51;
+- src/lib.rs: pub const RBRACKET: u16 = 52;
+- src/lib.rs: pub const LT: u16 = 53;
+- src/lib.rs: pub const GT: u16 = 54;
+- src/lib.rs: pub const COMMA: u16 = 55;
+- src/lib.rs: pub const SEMI: u16 = 56;
+- src/lib.rs: pub const COLON: u16 = 57;
+- src/lib.rs: pub const DOT: u16 = 58;
+- src/lib.rs: pub const QUESTION: u16 = 59;
+- src/lib.rs: pub const BANG: u16 = 60;
+- src/lib.rs: pub const ELLIPSIS: u16 = 61;
+- src/lib.rs: pub const ARROW_FN: u16 = 62;
+- src/lib.rs: pub const PLUS: u16 = 63;
+- src/lib.rs: pub const MINUS: u16 = 64;
+- src/lib.rs: pub const STAR: u16 = 65;
+- src/lib.rs: pub const SLASH: u16 = 66;
+- src/lib.rs: pub const PERCENT: u16 = 67;
+- src/lib.rs: pub const POWER: u16 = 68;
+- src/lib.rs: pub const EQ: u16 = 69;
+- src/lib.rs: pub const NEQ: u16 = 70;
+- src/lib.rs: pub const SEQ: u16 = 71;
+- src/lib.rs: pub const SNEQ: u16 = 72;
+- src/lib.rs: pub const LE: u16 = 73;
+- src/lib.rs: pub const GE: u16 = 74;
+- src/lib.rs: pub const AND: u16 = 75;
+- src/lib.rs: pub const OR: u16 = 76;
+- src/lib.rs: pub const AMP: u16 = 77;
+- src/lib.rs: pub const PIPE: u16 = 78;
+- src/lib.rs: pub const CARET: u16 = 79;
+- src/lib.rs: pub const TILDE: u16 = 80;
+- src/lib.rs: pub const LSHIFT: u16 = 81;
+- src/lib.rs: pub const SHIFT: u16 = 82;
+- src/lib.rs: pub const USHIFT: u16 = 83;
+- src/lib.rs: pub const INCREMENT: u16 = 84;
+- src/lib.rs: pub const DECREMENT: u16 = 85;
+- src/lib.rs: pub const EQUALS: u16 = 86;
+- src/lib.rs: pub const PLUSEQ: u16 = 87;
+- src/lib.rs: pub const MINUSEQ: u16 = 88;
+- src/lib.rs: pub const STAREQ: u16 = 89;
+- src/lib.rs: pub const SLASHEQ: u16 = 90;
+- src/lib.rs: pub const PERCENTEQ: u16 = 91;
+- src/lib.rs: pub const POWEREQ: u16 = 92;
+- src/lib.rs: pub const AND_EQ: u16 = 93;
+- src/lib.rs: pub const OR_EQ: u16 = 94;
+- src/lib.rs: pub const AMP_EQ: u16 = 95;
+- src/lib.rs: pub const PIPE_EQ: u16 = 96;
+- src/lib.rs: pub const CARET_EQ: u16 = 97;
+- src/lib.rs: pub const LSHIFT_EQ: u16 = 98;
+- src/lib.rs: pub const SHIFT_EQ: u16 = 99;
+- src/lib.rs: pub const USHIFT_EQ: u16 = 100;
+- src/lib.rs: pub const WHITESPACE: u16 = 101;
+- src/lib.rs: pub const COMMENT: u16 = 102;
+- src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
+- src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
+- src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
+- src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
+- src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
