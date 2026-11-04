@@ -42,7 +42,7 @@ pub mod kinds {
     pub const CTE: u16 = 1;
     /// The `SELECT` core (columns + clauses).
     pub const SELECT: u16 = 2;
-    /// A selected item (expr [[AS] alias]).
+    /// A selected item (expr [`AS` alias] — the `AS` word is optional).
     pub const SELECT_ITEM: u16 = 3;
     /// `FROM`/`JOIN` table source.
     pub const SOURCE: u16 = 4;
