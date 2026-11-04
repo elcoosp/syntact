@@ -21,6 +21,15 @@ use crate::token_kinds as tk;
 /// the v0 reference parser emits (resolved by [`error_message`]).
 pub const DIAG_SYNTAX: u32 = 0;
 
+/// Maximum nesting depth the recursive-descent parser will follow
+/// (blocks cycle on `{`, expressions cycle `parse_expr_bp → unary /
+/// atom / binops → parse_expr_bp`, types cycle through
+/// `parse_type_atom`). Deeper nesting fails cleanly: the opener rides
+/// an ERROR region (lossless), the parse resynchronizes and the process
+/// stays alive. Nesting bombs (`{{{{…`, `((((…`, `-----x`) are a
+/// classic stack-smash `DoS` and MUST NOT reach the stack.
+pub const MAX_DEPTH: usize = 512;
+
 /// Resolve a diagnostic side-table index to its message text.
 #[must_use]
 pub fn error_message(diag: u32) -> &'static str {
@@ -105,6 +114,8 @@ struct Parser<'s> {
     /// `(range, trivia kind, trailing)` covering every gap.
     trivia: Vec<(Range<u32>, u16, bool)>,
     errors: usize,
+    /// Current block/expr/type nesting depth, bounded by [`MAX_DEPTH`].
+    depth: usize,
 }
 
 impl<'s> Parser<'s> {
@@ -117,6 +128,7 @@ impl<'s> Parser<'s> {
             tokens: Vec::new(),
             trivia: Vec::new(),
             errors: 0,
+            depth: 0,
         }
     }
 
@@ -238,12 +250,11 @@ impl<'s> Parser<'s> {
             }
             self.pos += 1;
         }
-        if consume_stray && self.pos == start {
-            if let Some(b) = self.peek() {
-                if !matches!(b, b';' | b')' | b']' | b'}' | b'{') {
-                    self.pos += 1;
-                }
-            }
+        if consume_stray && self.pos == start && self.peek().is_some() {
+            self.pos += 1; // the stray char rides the error region —
+            // progress is unconditional: exempting the sync byte here
+            // let a caller retry fail_skip at the same cursor forever,
+            // growing the event stream without bound (OOM kill).
         }
         if self.pos > start {
             self.events.push(Event::Token {
@@ -1591,6 +1602,12 @@ impl<'s> Parser<'s> {
     }
 
     fn parse_block(&mut self) {
+        if self.depth >= MAX_DEPTH {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            return;
+        }
+        self.depth += 1;
         self.events.push(Event::Start {
             kind: kinds::BLOCK,
             forward_parent: None,
@@ -1622,6 +1639,7 @@ impl<'s> Parser<'s> {
             self.fail_skip(start, true);
         }
         self.events.push(Event::Finish);
+        self.depth -= 1;
     }
 
     fn parse_expr_stmt(&mut self) {
@@ -1684,6 +1702,19 @@ impl<'s> Parser<'s> {
     /// One type atom: reference (with generics + array suffixes), tuple,
     /// parenthesized group, object literal type, or literal.
     fn parse_type_atom(&mut self) {
+        if self.depth >= MAX_DEPTH {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            return;
+        }
+        self.depth += 1;
+        self.parse_type_atom_guarded();
+        self.depth -= 1;
+    }
+
+    /// The guarded body of [`Self::parse_type_atom`] (depth accounting
+    /// lives in the wrapper).
+    fn parse_type_atom_guarded(&mut self) {
         match self.peek() {
             Some(b'{') => {
                 // Object type literal — the member grammar shared with
@@ -1854,6 +1885,12 @@ impl<'s> Parser<'s> {
     /// arrow operators by binding power, then the ternary conditional.
     /// Nodes wrap retroactively via [`Self::wrap_node`] at `mark`.
     fn parse_expr_bp(&mut self, min_bp: u8) {
+        if self.depth >= MAX_DEPTH {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            return;
+        }
+        self.depth += 1;
         let mark = self.events.len();
         if let Some((kind, n, rbp)) = self.peek_unary() {
             self.bump(kind, n);
@@ -1891,6 +1928,7 @@ impl<'s> Parser<'s> {
             }
             self.wrap_node(mark, kinds::CONDITIONAL);
         }
+        self.depth -= 1;
     }
 
     /// Prefix unary operators; `new`/`typeof` ride `NAME` tokens.
