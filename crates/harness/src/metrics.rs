@@ -208,15 +208,17 @@ pub fn lex_fixture(grammar: &Grammar, source: &str) -> Vec<FixtureToken> {
                 "number"
             }
             _ => {
-                for (text, name) in [("true", "true"), ("false", "false"), ("null", "null")] {
-                    if source[pos..].starts_with(text) {
-                        pos += text.len();
-                        out.push(FixtureToken {
-                            look: look(name),
-                            range: start..pos,
-                        });
-                        break;
-                    }
+                let keyword = [("true", "true"), ("false", "false"), ("null", "null")]
+                    .iter()
+                    .find(|(text, _)| source[pos..].starts_with(text))
+                    .copied();
+                if let Some((text, name)) = keyword {
+                    pos += text.len();
+                    out.push(FixtureToken {
+                        look: look(name),
+                        range: start..pos,
+                    });
+                    continue;
                 }
                 pos += 1; // garbage char: skip (not a fixture token)
                 continue;
