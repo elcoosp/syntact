@@ -1,17 +1,25 @@
 //! # packs-sql — the SQL (SQLite-dialect subset) grammar pack (issue 035)
 //!
 //! Reference parser on the runtime-core event protocol: `SELECT` with
-//! joins, subqueries and CTEs, `INSERT`/`UPDATE`/`DELETE`, `CREATE
-//! TABLE` with constraints, scalar expressions, `CASE`, literals,
-//! `--`/`/* */` trivia, and case-insensitive keywords.
+//! joins, subqueries and CTEs, compound selects (`UNION [ALL]`,
+//! `EXCEPT`, `INTERSECT`), `INSERT`/`UPDATE`/`DELETE`, `CREATE
+//! TABLE`/`[UNIQUE] INDEX`/`VIEW`, `ALTER TABLE`, `DROP`, `PRAGMA`,
+//! `BEGIN`/`COMMIT`/`ROLLBACK`, scalar expressions with `EXISTS`,
+//! `CASE`, literals, `--`/`/* */` trivia, and case-insensitive
+//! keywords.
 //!
 //! # Documented subset (v0)
 //!
 //! - **Statements**: `SELECT [DISTINCT] cols FROM … [JOIN … ON …]
-//!   [WHERE …] [GROUP BY …] [HAVING …] [ORDER BY … [ASC|DESC]]
-//!   [LIMIT …]`; `INSERT INTO t [(cols)] VALUES (…), …`; `UPDATE t SET
-//!   c = e, … [WHERE …]`; `DELETE FROM t [WHERE …]`; `CREATE TABLE t
-//!   (col constraints…, …)`; `WITH name AS (…), …` prefix (CTEs).
+//!   [WHERE …] [GROUP BY …] [HAVING …]` chained by compound operators
+//!   `UNION [ALL]`/`EXCEPT`/`INTERSECT`, then `ORDER BY … [ASC|DESC]`,
+//!   `LIMIT …`, `OFFSET …`; `INSERT INTO t [(cols)] VALUES (…), …`;
+//!   `UPDATE t SET c = e, … [WHERE …]`; `DELETE FROM t [WHERE …]`;
+//!   `CREATE TABLE t (col constraints…, …)`; `CREATE [UNIQUE] INDEX i
+//!   ON t (cols)`; `CREATE VIEW v AS SELECT …`; `ALTER TABLE t …`
+//!   (action words ride tokens); `DROP TABLE|INDEX|VIEW [IF EXISTS]
+//!   name, …`; `PRAGMA name [= value]`; `BEGIN [TRANSACTION]`,
+//!   `COMMIT`, `ROLLBACK`; `WITH name AS (…), …` prefix (CTEs).
 //! - **Expressions**: precedence climbing — `OR`, `AND`, `NOT`,
 //!   comparisons (`=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `IN`, `LIKE`,
 //!   `IS [NOT] NULL`, `BETWEEN`), additive, multiplicative, unary
@@ -80,6 +88,20 @@ pub mod kinds {
     pub const QUALIFIED: u16 = 20;
     /// An `IN (…)` / `IN (SELECT …)` list.
     pub const IN_LIST: u16 = 21;
+    /// A compound-select operator: `UNION [ALL]` / `EXCEPT` / `INTERSECT`.
+    pub const COMPOUND: u16 = 47;
+    /// `ALTER TABLE …`.
+    pub const ALTER: u16 = 48;
+    /// `DROP TABLE|INDEX|VIEW …`.
+    pub const DROP: u16 = 49;
+    /// `PRAGMA name [= value]`.
+    pub const PRAGMA: u16 = 50;
+    /// `BEGIN` / `COMMIT` / `ROLLBACK`.
+    pub const TXN: u16 = 51;
+    /// `CREATE [UNIQUE] INDEX … ON t (cols)`.
+    pub const CREATE_INDEX: u16 = 52;
+    /// `CREATE VIEW v AS SELECT …`.
+    pub const CREATE_VIEW: u16 = 53;
 }
 
 /// Token kinds — dense continuation of [`kinds`].
