@@ -875,24 +875,39 @@ impl<'s> Parser<'s> {
                         self.bump_kw("const");
                         self.skip_trivia();
                     }
-                    self.bump_name();
-                    self.skip_trivia();
-                    // A qualified type as a "param" (Vec<u8> in
-                    // Vec<Vec<u8>>): recurse into its own arguments.
-                    if self.peek() == Some(b'<') {
-                        self.parse_generic_params();
-                        self.skip_trivia();
-                    }
-                    if self.peek() == Some(b':') {
-                        self.bump(tk::COLON, 1);
-                        self.skip_trivia();
-                        self.parse_type_union();
-                    }
-                    self.skip_trivia();
-                    if self.peek() == Some(b'=') {
-                        self.bump(tk::ASSIGN, 1);
-                        self.skip_trivia();
+                    if self.type_like_ahead() {
+                        // Generic *arguments* can be full types:
+                        // `Result<(), E>`, `Option<&str>`, `Box<dyn Trait>`,
+                        // `[u8; 4]`, `(A, B)`.
                         self.parse_type();
+                        self.skip_trivia();
+                    } else {
+                        self.bump_name();
+                        self.skip_trivia();
+                        // Path segments: `std::error::Error`.
+                        while self.peek() == Some(b':') && self.at(1) == Some(b':') {
+                            self.bump(tk::COLON2, 2);
+                            self.skip_trivia();
+                            self.bump_name();
+                            self.skip_trivia();
+                        }
+                        // A qualified type as a "param" (Vec<u8> in
+                        // Vec<Vec<u8>>): recurse into its own arguments.
+                        if self.peek() == Some(b'<') {
+                            self.parse_generic_params();
+                            self.skip_trivia();
+                        }
+                        if self.peek() == Some(b':') {
+                            self.bump(tk::COLON, 1);
+                            self.skip_trivia();
+                            self.parse_type_union();
+                        }
+                        self.skip_trivia();
+                        if self.peek() == Some(b'=') {
+                            self.bump(tk::ASSIGN, 1);
+                            self.skip_trivia();
+                            self.parse_type();
+                        }
                     }
                 }
             }
@@ -917,6 +932,15 @@ impl<'s> Parser<'s> {
             self.fail_skip(start, true);
         }
         self.events.push(Event::Finish);
+    }
+
+    /// Whether a full type can start at the cursor (used to accept type
+    /// arguments in generic argument lists: `&T`, `(...)`, `[...]`,
+    /// `*const T`, `dyn Trait`, `impl Trait`).
+    fn type_like_ahead(&self) -> bool {
+        matches!(self.peek(), Some(b'&' | b'(' | b'[' | b'*'))
+            || self.peek_kw("dyn")
+            || self.peek_kw("impl")
     }
 
     /// `where T: Into<U>, 'a: 'b` — predicates split on top-level commas.
@@ -1471,6 +1495,14 @@ impl<'s> Parser<'s> {
             self.parse_expr_bp(1);
         }
         self.skip_trivia();
+        // Let-else: `let PAT = expr else { … };` — the diverging block
+        // belongs to the LET node.
+        if self.peek_kw("else") {
+            self.bump_kw("else");
+            self.skip_trivia();
+            self.expect_block();
+            self.skip_trivia();
+        }
         self.terminator();
         self.events.push(Event::Finish);
     }
@@ -1599,7 +1631,9 @@ impl<'s> Parser<'s> {
         self.events.push(Event::Finish);
     }
 
-    /// `let pat = expr` inside if/while heads (no trailing `;`).
+    /// `let pat = expr` inside if/while heads (no trailing `;`). The
+    /// value expression must NOT eat struct literals — `if let x = res
+    /// { … }` would otherwise consume the block as `res { … }`.
     fn parse_let_head(&mut self) {
         self.events.push(Event::Start {
             kind: kinds::LET,
@@ -1612,7 +1646,7 @@ impl<'s> Parser<'s> {
         if self.peek() == Some(b'=') {
             self.bump(tk::ASSIGN, 1);
             self.skip_trivia();
-            self.parse_expr_bp(1);
+            self.parse_expr_no_struct(1);
         }
         self.events.push(Event::Finish);
     }
@@ -1639,6 +1673,7 @@ impl<'s> Parser<'s> {
         self.skip_trivia();
         if self.peek() == Some(b'{') {
             self.bump(tk::LBRACE, 1);
+            let mut body_block = false;
             loop {
                 self.skip_trivia();
                 match self.peek() {
@@ -1668,11 +1703,13 @@ impl<'s> Parser<'s> {
                 if self.peek() == Some(b'=') && self.at(1) == Some(b'>') {
                     self.bump(tk::FATARROW, 2);
                     self.skip_trivia();
-                    if self.peek() == Some(b'{') {
+                    let body_is_block = self.peek() == Some(b'{');
+                    if body_is_block {
                         self.parse_block();
                     } else {
                         self.parse_expr_bp(1);
                     }
+                    body_block = body_is_block;
                 } else {
                     let start = self.pos;
                     self.fail_skip(start, true);
@@ -1686,7 +1723,12 @@ impl<'s> Parser<'s> {
                 if self.peek() == Some(b'}') {
                     break;
                 }
-                // A block arm needs no comma; anything else errors once.
+                // A block arm needs no comma — the loop head opens the
+                // next arm directly. A non-block arm without a comma
+                // errors once (bounded recovery).
+                if body_block {
+                    continue;
+                }
                 if self.peek().is_some() && self.peek() != Some(b'}') {
                     let start = self.pos;
                     self.fail_skip(start, true);
@@ -1951,15 +1993,20 @@ impl Parser<'_> {
         }
         self.bump_name();
         self.skip_trivia();
-        if self.peek() == Some(b':') && self.at(1) == Some(b':') {
-            self.bump(tk::COLON2, 2);
-            self.skip_trivia();
-            self.bump_name();
-            self.skip_trivia();
-        }
-        if self.peek() == Some(b'<') {
-            self.parse_generic_params();
-            self.skip_trivia();
+        loop {
+            if self.peek() == Some(b':') && self.at(1) == Some(b':') {
+                self.bump(tk::COLON2, 2);
+                self.skip_trivia();
+                self.bump_name();
+                self.skip_trivia();
+                continue;
+            }
+            if self.peek() == Some(b'<') {
+                self.parse_generic_params();
+                self.skip_trivia();
+                continue;
+            }
+            break;
         }
         self.wrap_node(mark, kinds::FIELD); // a type path rides FIELD nodes
     }
