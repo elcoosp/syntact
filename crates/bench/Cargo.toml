@@ -16,6 +16,15 @@ packs-json.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 dhat.workspace = true
+packs-c.workspace = true
+packs-csv.workspace = true
+packs-ini.workspace = true
+packs-markdown.workspace = true
+packs-python.workspace = true
+packs-rust.workspace = true
+packs-sql.workspace = true
+packs-toml.workspace = true
+packs-typescript.workspace = true
 
 [[bench]]
 name = "json"
