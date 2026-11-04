@@ -42,7 +42,7 @@
 //! # Trivia discipline (ADR-008)
 //!
 //! Whitespace and `#` comments are never token events — they ride
-//! [`TriviaRecord`]s (kinds [`token_kinds::WHITESPACE`] and
+//! [`runtime_core::sink::TriviaRecord`]s (kinds [`token_kinds::WHITESPACE`] and
 //! [`token_kinds::COMMENT`]) attached at tree-build time, so
 //! `render(parse(x)) == x` byte-for-byte.
 
