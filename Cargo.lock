@@ -237,6 +237,7 @@ dependencies = [
  "lexgen",
  "lr-shadow",
  "packs-json",
+ "recovery",
  "runtime-core",
 ]
 
@@ -463,6 +464,12 @@ dependencies = [
 name = "incremental"
 version = "0.1.0"
 dependencies = [
+ "gir-ir",
+ "harness",
+ "lexgen",
+ "packs-json",
+ "packs-toml",
+ "pretty_assertions",
  "runtime-core",
 ]
 
@@ -801,6 +808,7 @@ name = "query"
 version = "0.1.0"
 dependencies = [
  "packs-json",
+ "pretty_assertions",
  "runtime-core",
 ]
 
