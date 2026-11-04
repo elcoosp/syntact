@@ -1,154 +1,235 @@
-//! `syntact trace` integration tests (issue 029 TDD): JSON output shape
-//! on a mutated fixture, byte-identical determinism, exit codes.
+//! trace integration tests (issue 029 TDD): JSON output shape on a
+//! mutated fixture document, byte-identical determinism, and exit codes
+//! — all through the public [`cli::trace`] engine and [`cli::run`].
 
-use cli::trace::{render_json, render_text, trace_json};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-/// A scratch file for the exit-code tests.
-fn temp_file(name: &str, content: &str) -> std::path::PathBuf {
-    let mut path = std::env::temp_dir();
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("clock")
-        .as_nanos();
-    path.push(format!("syntact-trace-{stamp}-{name}"));
-    std::fs::write(&path, content).expect("write fixture");
-    path
-}
+use cli::trace::{render_json, render_text, trace};
+use cli::{FAIL, OK, USAGE};
 
-/// The mutated fixture: object closed with `]` instead of `}`.
-const MUTATED: &str = "{\"a\": 1 ]";
-/// A clean document.
-const CLEAN: &str = "{\"a\": [1, 2], \"b\": null}";
-/// A long broken document: the repair window cannot see the document
-/// tail, so the planner reports no complete repair for the region and
-/// the trace records the unrepairable verdict.
-fn hopeless() -> String {
-    let mut source = String::from("[1");
-    for _ in 0..80 {
-        source.push_str(", , 1");
-    }
-    source.push(']');
-    source
-}
+/// The calibration fixture shape: `{"a": 1}` with the colon deleted.
+const MUTATED: &str = "{\"a\" 1}";
+/// The clean counterpart.
+const CLEAN: &str = "{\"a\": 1}";
+/// EOF failure: the closing brace is missing.
+const EOF_BROKEN: &str = "{\"a\": 1";
+/// A comma where a value belongs (the pack tolerates it; the shadow
+/// automaton flags it).
+const TIE: &str = "[1, , 3]";
+/// One broken pair whose repair script spans three ops.
+const MULTI_OP: &str = "{\"a\" 1 \"b\" 2}";
+/// Two separated failures — two regions in ascending order.
+const TWO_REGIONS: &str = "{\"a\" 1} [2 , 3] {\"b\": }";
+/// A broken TOML document (unterminated array, then an empty pair).
+const TOML_BROKEN: &str = "key = [1, \nother = \n";
+/// A clean TOML document.
+const TOML_CLEAN: &str = "key = 1\n";
 
 #[test]
 fn json_output_shape_on_mutated_fixture() {
-    let grammar = harness::metrics::json_fixture();
-    let trace = trace_json(MUTATED);
-    assert!(!trace.regions.is_empty(), "the broken closer is a region");
-    assert!(trace.complete, "one repair closes the gap");
-    let json = render_json(&grammar, &trace);
-    // Shape contract: bytes, regions with offset/ops/resync, complete.
-    assert!(json.starts_with("{\"bytes\":9,\"regions\":["));
-    assert!(json.contains("\"ops\":[[\"insert\",\"rbrace\"],[\"delete\",\"rbrack\"]]"));
-    assert!(json.contains("\"resync\":9"));
-    assert!(json.ends_with(",\"complete\":true}"));
-    // Canonical op order (Insert < Delete at the cost tie).
-    let grammar = harness::metrics::json_fixture();
-    let region = &trace.regions[0];
-    assert_eq!(region.offset, 8);
-    let expect_look = |name: &str| {
-        let token = grammar
-            .tokens
-            .iter()
-            .find(|t| grammar.interner.lookup(t.name) == name)
-            .expect("fixture token");
-        lr_shadow::Look::token(token.id)
-    };
-    assert_eq!(
-        region.ops,
-        vec![
-            recovery::RepairOp::Insert(expect_look("rbrace")),
-            recovery::RepairOp::Delete(expect_look("rbrack")),
-        ]
+    let output = trace("json", MUTATED).expect("json trace");
+    assert!(!output.ok);
+    assert_eq!(output.source_len, 7);
+    assert_eq!(output.regions.len(), 1, "regions: {:?}", output.regions);
+    let region = &output.regions[0];
+    assert_eq!(region.offset, 5);
+    assert_eq!(region.kind, "syntax error");
+    assert_eq!(region.ops.len(), 1);
+    assert_eq!(region.ops[0].op, "insert");
+    assert_eq!(region.ops[0].token, "colon");
+    assert_eq!(region.resync, 5);
+    let expected = concat!(
+        "{\n",
+        "  \"pack\": \"json\",\n",
+        "  \"source_len\": 7,\n",
+        "  \"ok\": false,\n",
+        "  \"regions\": [\n",
+        "    {\n",
+        "      \"offset\": 5,\n",
+        "      \"kind\": \"syntax error\",\n",
+        "      \"ops\": [\n",
+        "        {\"op\": \"insert\", \"token\": \"colon\"}\n",
+        "      ],\n",
+        "      \"resync\": 5\n",
+        "    }\n",
+        "  ]\n",
+        "}\n"
     );
-    assert_eq!(region.resync, 9);
+    assert_eq!(render_json(&output), expected);
 }
 
 #[test]
-fn text_output_names_the_repair() {
-    let grammar = harness::metrics::json_fixture();
-    let trace = trace_json(MUTATED);
-    let text = render_text(&grammar, &trace);
-    assert!(text.contains("region 1 @ 8: repair [insert rbrace, delete rbrack] → resync @ 9"));
-    assert!(text.ends_with("verdict: repaired\n"));
+fn clean_documents_have_no_regions() {
+    let output = trace("json", CLEAN).expect("json trace");
+    assert!(output.ok);
+    let text = render_text(&output);
+    assert!(text.contains("no recovery regions"), "text: {text}");
+    let json = render_json(&output);
+    assert!(json.contains("\"regions\": []"), "json: {json}");
+    assert!(json.contains("\"ok\": true"), "json: {json}");
+}
+
+#[test]
+fn eof_failure_inserts_the_missing_brace() {
+    let output = trace("json", EOF_BROKEN).expect("json trace");
+    assert_eq!(output.regions.len(), 1, "regions: {:?}", output.regions);
+    let region = &output.regions[0];
+    assert_eq!(region.offset, output.source_len, "EOF region at end");
+    assert_eq!(region.kind, "syntax error");
+    assert_eq!(region.ops.len(), 1);
+    assert_eq!(region.ops[0].op, "insert");
+    assert_eq!(region.ops[0].token, "rbrace");
+    assert_eq!(region.resync, output.source_len);
+}
+
+#[test]
+fn canonical_tie_prefers_insert() {
+    // The reference pack tolerates the empty element (no diagnostic);
+    // the shadow automaton's stricter grammar flags the comma. The
+    // canonical cost-2 repair is the lowest-Look value insert.
+    let output = trace("json", TIE).expect("json trace");
+    assert_eq!(output.regions.len(), 1, "regions: {:?}", output.regions);
+    let region = &output.regions[0];
+    assert_eq!(region.offset, 4);
+    assert_eq!(region.kind, "unexpected comma");
+    assert_eq!(region.ops.len(), 1);
+    assert_eq!(region.ops[0].op, "insert");
+    assert_eq!(region.ops[0].token, "string");
+    assert_eq!(region.resync, 4);
+}
+
+#[test]
+fn repair_script_batches_multiple_ops() {
+    // One plan, three lazily-applied ops: the colon before `1`, the
+    // comma before the next pair, the colon before `2`.
+    let output = trace("json", MULTI_OP).expect("json trace");
+    assert_eq!(output.regions.len(), 1, "regions: {:?}", output.regions);
+    let region = &output.regions[0];
+    assert_eq!(region.offset, 5);
+    assert_eq!(region.kind, "syntax error");
+    let ops: Vec<(&str, &str)> = region
+        .ops
+        .iter()
+        .map(|op| (op.op, op.token.as_str()))
+        .collect();
+    assert_eq!(
+        ops,
+        [
+            ("insert", "colon"),
+            ("insert", "comma"),
+            ("insert", "colon")
+        ],
+        "ops: {ops:?}"
+    );
+    assert_eq!(region.resync, 11);
+}
+
+#[test]
+fn json_traces_multiple_regions_ascending() {
+    let output = trace("json", TWO_REGIONS).expect("json trace");
+    assert!(!output.ok);
+    assert_eq!(output.regions.len(), 2, "regions: {:?}", output.regions);
+    let offsets: Vec<usize> = output.regions.iter().map(|r| r.offset).collect();
+    assert_eq!(offsets, [5, 8], "ascending offsets");
+    let kinds: Vec<&str> = output.regions.iter().map(|r| r.kind.as_str()).collect();
+    assert_eq!(kinds, ["syntax error", "unexpected lbrack"]);
+    for region in &output.regions {
+        assert!(
+            region.resync >= region.offset,
+            "resync past the failure: {region:?}"
+        );
+        assert!(!region.ops.is_empty(), "planned repair: {region:?}");
+    }
+    assert_eq!(output.regions[1].resync, output.source_len);
 }
 
 #[test]
 fn determinism_byte_identical_runs() {
-    let grammar = harness::metrics::json_fixture();
-    for source in [CLEAN, MUTATED, hopeless().as_str()] {
-        let a = trace_json(source);
-        let b = trace_json(source);
-        assert_eq!(a, b, "trace structure deterministic on {source:?}");
-        assert_eq!(render_json(&grammar, &a), render_json(&grammar, &b));
-        assert_eq!(render_text(&grammar, &a), render_text(&grammar, &b));
+    for source in [MUTATED, TIE, MULTI_OP, TWO_REGIONS, EOF_BROKEN, CLEAN] {
+        let first = trace("json", source).expect("trace");
+        let json = render_json(&first);
+        let text = render_text(&first);
+        for _ in 0..4 {
+            let again = trace("json", source).expect("trace");
+            assert_eq!(render_json(&again), json, "json stable on {source:?}");
+            assert_eq!(render_text(&again), text, "text stable on {source:?}");
+        }
     }
 }
 
 #[test]
-fn clean_document_has_no_regions() {
-    let trace = trace_json(CLEAN);
-    assert!(trace.regions.is_empty(), "{:?}", trace.regions);
-    assert!(trace.complete);
-    assert_eq!(trace.bytes, u32::try_from(CLEAN.len()).expect("small"));
-    let grammar = harness::metrics::json_fixture();
-    let json = render_json(&grammar, &trace);
-    assert_eq!(json, "{\"bytes\":24,\"regions\":[],\"complete\":true}");
+fn toml_pack_reports_native_recovery_regions() {
+    let broken = trace("toml", TOML_BROKEN).expect("toml trace");
+    assert!(!broken.ok);
+    assert_eq!(broken.regions.len(), 2, "regions: {:?}", broken.regions);
+    let offsets: Vec<usize> = broken.regions.iter().map(|r| r.offset).collect();
+    assert_eq!(offsets, [11, 20], "ascending offsets");
+    for region in &broken.regions {
+        assert_eq!(region.kind, "syntax error");
+        assert!(
+            region.ops.is_empty(),
+            "native regions carry no ops: {region:?}"
+        );
+        assert!(region.resync >= region.offset, "region: {region:?}");
+    }
+    let clean = trace("toml", TOML_CLEAN).expect("toml trace");
+    assert!(clean.ok);
 }
 
 #[test]
-fn hopeless_document_is_unrepaired_with_regions() {
-    // More broken regions than the cap: the trace stops at the safety
-    // limit and reports the verdict (deterministically).
-    let source = hopeless();
-    let trace = trace_json(&source);
-    let grammar = harness::metrics::json_fixture();
-    let text = render_text(&grammar, &trace);
-    assert!(text.ends_with("verdict: unrepaired\n"));
-    assert_eq!(trace.regions.len(), 1, "the unplannable region");
-    assert!(!trace.complete);
-    let again = trace_json(&source);
-    assert_eq!(render_text(&grammar, &trace), render_text(&grammar, &again));
-}
-
-/// The str form of a fixture path.
-fn path(p: &std::path::Path) -> &str {
-    p.to_str().expect("path")
+fn unknown_pack_is_rejected() {
+    let error = trace("cobol", CLEAN).expect_err("unknown pack");
+    assert!(error.contains("unknown pack"), "error: {error}");
 }
 
 #[test]
-fn exit_codes_over_the_cli_entry() {
-    let mutated = temp_file("trace-mutated.json", MUTATED);
-    let clean = temp_file("trace-clean.json", CLEAN);
-    let hopeless = temp_file("trace-hopeless.json", &hopeless());
+fn exit_codes() {
+    let good = temp_file("trace-good.json", CLEAN);
+    let bad = temp_file("trace-bad.json", MUTATED);
+    let missing = temp_dir().join("trace-missing-does-not-exist.json");
+    let good_path = good.to_string_lossy().into_owned();
+    let bad_path = bad.to_string_lossy().into_owned();
+    let missing_path = missing.to_string_lossy().into_owned();
 
-    assert_eq!(
-        cli::run(["trace", "json", path(&mutated)]).expect("runs"),
-        cli::OK
-    );
-    assert_eq!(
-        cli::run(["trace", "json", "--json", path(&mutated)]).expect("runs"),
-        cli::OK
-    );
-    assert_eq!(
-        cli::run(["trace", "json", path(&clean)]).expect("runs"),
-        cli::OK
-    );
-    assert_eq!(
-        cli::run(["trace", "json", path(&hopeless)]).expect("runs"),
-        cli::FAIL
-    );
-    assert_eq!(
-        cli::run(["trace", "json", "/no/such/file"]).expect("runs"),
-        cli::USAGE
-    );
-    assert_eq!(
-        cli::run(["trace", "toml", path(&clean)]).expect("runs"),
-        cli::USAGE
-    );
+    // Clean document → 0.
+    assert_eq!(run(&["trace", "json", &good_path]), OK);
+    // Mutated document → 1 (regions found).
+    assert_eq!(run(&["trace", "json", &bad_path]), FAIL);
+    // Unreadable file → 2.
+    assert_eq!(run(&["trace", "json", &missing_path]), USAGE);
+    // Unknown pack → 2.
+    assert_eq!(run(&["trace", "cobol", &good_path]), USAGE);
+    // --json wiring still gates the verdict.
+    assert_eq!(run(&["trace", "json", &bad_path, "--json"]), FAIL);
+    assert_eq!(run(&["trace", "json", &good_path, "--json"]), OK);
+}
 
-    let _ = std::fs::remove_file(mutated);
-    let _ = std::fs::remove_file(clean);
-    let _ = std::fs::remove_file(hopeless);
+#[test]
+fn text_renders_human_readable_regions() {
+    let output = trace("json", MUTATED).expect("trace");
+    let text = render_text(&output);
+    assert!(text.contains("pack json"), "text: {text}");
+    assert!(text.contains("offset 5"), "text: {text}");
+    assert!(text.contains("insert colon"), "text: {text}");
+    assert!(text.contains("resync: 5"), "text: {text}");
+}
+
+/// Run the CLI; arguments after the program name.
+fn run(args: &[&str]) -> i32 {
+    cli::run(args.iter().copied()).expect("clap parse")
+}
+
+/// Write `content` to a uniquely named temp file; returns its path.
+fn temp_file(name: &str, content: &str) -> std::path::PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let path = temp_dir().join(format!("{name}-{}-{nanos}", std::process::id()));
+    std::fs::write(&path, content).expect("write temp file");
+    path
+}
+
+fn temp_dir() -> std::path::PathBuf {
+    std::env::temp_dir()
 }
