@@ -86,12 +86,12 @@ const CORPUS: &[(&str, usize)] = &[
     // -- malformed with tolerated-error budgets -------------------------
     ("let x = ;", 1),             // missing value
     ("let x = @;", 1),            // garbage value
-    ("if (a { b(); }", 1),        // missing close paren
+    ("if (a { b(); }", 2),        // missing close paren (the stray `;` now rides the error region)
     ("x = \"unterminated;", 1),   // unterminated string
     ("x = `unterminated;", 1),    // unterminated template
     ("function f(: void) {}", 1), // bad parameter list
     ("x = [1, 2;", 1),            // unterminated array
-    ("interface I { a }", 1),     // member missing type annotation
+    ("interface I { a }", 2),     // member missing type annotation
 ];
 
 /// Build the green tree through the full `parse` integration.
@@ -340,4 +340,27 @@ fn steps_project_statements() {
     assert!(enters.contains(&kinds::VAR_DECL));
     // const x = 1;  → five token ranges (const, x, =, 1, ;)
     assert_eq!(ranges.len(), 5);
+}
+
+/// Regression (fuzz-found): a duplicated, mangled generic declaration
+/// used to park `fail_skip` on `}` inside interface-member recovery —
+/// zero progress per retry — and the event stream grew without bound
+/// until the process was OOM-killed. The parse must terminate with a
+/// bounded error count and stay lossless.
+#[test]
+fn mangled_generic_declaration_terminates_bounded() {
+    let source = "const x: number = 1; interface I\n{ a: strinnction\u{fffd}f<T>(: T { re+IFZj+uS+=turn v; }\ninnction\u{fffd}f<T>(: T { re+IFZj+uS+=turn v; }";
+    let (events, _, errors) = parse_events(source);
+    assert!(errors < 128, "bounded tolerated errors, got {errors}");
+    assert!(
+        events.len() < 4096,
+        "event stream is bounded, got {}",
+        events.len()
+    );
+    let tree = crate::parse(source).expect("tree integration never fails structurally");
+    assert_eq!(
+        tree.render(&Source::from_str_unchecked(source)),
+        source,
+        "recovery must stay lossless"
+    );
 }
