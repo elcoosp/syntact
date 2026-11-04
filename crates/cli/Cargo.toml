@@ -22,5 +22,11 @@ packs-json.workspace = true
 packs-toml.workspace = true
 recovery.workspace = true
 
+[dev-dependencies]
+incremental.workspace = true
+query.workspace = true
+lr-shadow.workspace = true
+pretty_assertions.workspace = true
+
 [lints]
 workspace = true
