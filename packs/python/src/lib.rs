@@ -1,211 +1,266 @@
-//! # packs-python — the Python grammar pack (issue 028, documented subset)
+//! # packs-python — the Python-subset grammar pack (issue 028)
 //!
 //! Reference parser for a documented Python subset on the runtime-core
-//! event protocol.
+//! event protocol: simple + compound statements, `INDENT`/`DEDENT`
+//! scanner suites (CPython-style column stack, tab = 8), Pratt
+//! expressions with chaining comparisons, f-strings with nested
+//! interpolation expressions, decorators, comprehensions, and `#`
+//! comments as trivia.
 //!
-//! **The subset** (everything else errors and recovers):
-//! - statements: expression/assignment, `return` (optional value),
-//!   `pass`, `break`, `continue`, `if`/`elif`/`else`, `while`, `for … in`,
-//!   `def` (positional params with optional defaults), `@` decorators;
-//! - expressions: full Pratt surface — `or`/`and`/`not`, comparisons
-//!   (`== != < > <= >= in is`), `| ^ & << >> + - * / // %`, unary
-//!   `- + ~`, right-assoc `**`, calls, attributes, subscripts, names,
-//!   numbers, strings, f-strings, `True`/`False`/`None`, parenthesized
-//!   groups/tuples, list displays and list comprehensions
-//!   (`[e for x in it (if c)*]`, single-name targets);
-//! - **INDENT/DEDENT** suites (spaces; tabs are an error region),
-//!   bracket continuation (no NEWLINE inside `()[]`),
-//!   `#` comments and blanks as trivia, and **f-strings with nested
-//!   interpolation** (`f"a {f"{b}"} c"`) — no format specs, no dict
-//!   displays inside interpolations (documented).
+//! # Documented subset (v0)
+//!
+//! - **Statements**: expression statements, assignments (chained, aug),
+//!   `return`/`pass`/`break`/`continue`, `import`/`from … import`,
+//!   `del`, `global`, `assert`, `raise`, `if`/`elif`/`else`,
+//!   `while`/`for` (+ `else`), `def` (annotations + defaults + `*`/`**`),
+//!   `class`, decorators. Single-line suites after `:`.
+//! - **Not in the subset** (each parses as an error and recovers):
+//!   `try`/`except`/`finally`, `with`, `lambda`, `yield`, `await`,
+//!   `async`, `match`, walrus.
+//! - **Scanner**: `INDENT` token = the indent run of a deeper line;
+//!   `DEDENT` = one zero-width token per popped level (also flushed at
+//!   EOF); `NEWLINE` = the `\n`/`\r\n` ending a logical line (inside
+//!   brackets and on blank/comment-only lines it is trivia); `\`-newline
+//!   continuation is trivia; comment-only lines carry the newline inside
+//!   the comment trivia record, trailing comments do not.
+//! - **f-strings** (PEP 701-flavoured): `FSTRING_START` (prefix+quote),
+//!   `FSTRING_MIDDLE` literal chunks (`{{`/`}}` stay literal),
+//!   interpolation = `{` expr [`!` conv] [`:` raw spec] `}` with the
+//!   expression parsed by the full Pratt grammar (nested f-strings
+//!   recurse), `FSTRING_END`. The format spec is raw (no nested
+//!   interpolations, documented subset).
+//! - **Comparisons** chain inside one `COMPARE` node (`a < b < c`);
+//!   `**` is right-associative; everything else is left-associative.
+//! - Adjacent string literal tokens are sibling leaves (implicit
+//!   concatenation, no wrapper node in v0).
+//!
+//! Kind numbering (documented mapping, mirroring the JSON/TOML packs):
+//! node kinds in [`kinds`], leaf tokens + punctuation in
+//! [`token_kinds`] (dense continuation), offending regions via
+//! [`runtime_core::ERROR_KIND`], implicit root [`ROOT_KIND`].
+//!
+//! # Trivia discipline (ADR-008)
+//!
+//! Whitespace and `#` comments are never token events — they ride
+//! [`TriviaRecord`]s (kinds [`token_kinds::WHITESPACE`] and
+//! [`token_kinds::COMMENT`]) attached at tree-build time, so
+//! `render(parse(x)) == x` byte-for-byte.
 
-pub mod lexer;
 pub mod reference;
 
-/// Node kinds for the Python grammar (dense).
+/// Node kinds for the Python-subset grammar (dense).
 pub mod kinds {
-    /// A module (the implicit root wraps sibling statements).
-    pub const FUNC_DEF: u16 = 0;
-    /// `if` / `elif` header + suite.
-    pub const IF_STMT: u16 = 1;
-    /// `else:` clause.
-    pub const ELSE_CLAUSE: u16 = 2;
-    /// `while` loop.
-    pub const WHILE_STMT: u16 = 3;
-    /// `for` loop.
-    pub const FOR_STMT: u16 = 4;
+    /// `if` / `elif` statement (elif chains nest as sibling nodes).
+    pub const IF: u16 = 0;
+    /// `else:` clause of `if`/`while`/`for`.
+    pub const ELSE: u16 = 1;
+    /// `while` statement.
+    pub const WHILE: u16 = 2;
+    /// `for … in …` statement.
+    pub const FOR: u16 = 3;
+    /// `def` statement.
+    pub const FUNC_DEF: u16 = 4;
+    /// `class` statement.
+    pub const CLASS_DEF: u16 = 5;
+    /// One or more decorators + the decorated `def`/`class`.
+    pub const DECORATED: u16 = 6;
+    /// One `@` decorator line.
+    pub const DECORATOR: u16 = 7;
+    /// Parameter list of a `def`.
+    pub const PARAMS: u16 = 8;
+    /// An indented block (`INDENT` statements `DEDENT`) or single-line
+    /// suite.
+    pub const SUITE: u16 = 9;
     /// `return` statement.
-    pub const RETURN: u16 = 5;
-    /// `pass`.
-    pub const PASS: u16 = 6;
-    /// `break`.
-    pub const BREAK: u16 = 7;
-    /// `continue`.
-    pub const CONTINUE: u16 = 8;
-    /// `target = value` assignment.
-    pub const ASSIGN: u16 = 9;
-    /// A bare expression statement.
-    pub const EXPR_STMT: u16 = 10;
-    /// One `@decorator` line.
-    pub const DECORATOR: u16 = 11;
-    /// `def name(params): suite`.
-    pub const PARAMS: u16 = 12;
-    /// Binary operation (op kind in the child token).
-    pub const BIN_EXPR: u16 = 13;
-    /// Unary operation.
-    pub const UNARY_EXPR: u16 = 14;
-    /// `f(args)` call.
-    pub const CALL: u16 = 15;
-    /// `obj.attr` attribute access.
-    pub const ATTR: u16 = 16;
-    /// `obj[expr]` subscript.
-    pub const SUBSCRIPT: u16 = 17;
-    /// `[a, b]` list display / comprehension.
-    pub const LIST_EXPR: u16 = 18;
-    /// `(a, b)` tuple / grouping.
-    pub const TUPLE_EXPR: u16 = 19;
-    /// `f"…"` interpolation container.
-    pub const FSTRING: u16 = 20;
-    /// `[e for x in it]` comprehension clause.
-    pub const COMP_FOR: u16 = 21;
-    /// comprehension `if` filter.
-    pub const COMP_IF: u16 = 22;
-    /// `name(args…)` function definition parameters.
-    pub const FUNC_HEADER: u16 = 23;
+    pub const RETURN: u16 = 10;
+    /// `pass` statement.
+    pub const PASS: u16 = 11;
+    /// `break` statement.
+    pub const BREAK: u16 = 12;
+    /// `continue` statement.
+    pub const CONTINUE: u16 = 13;
+    /// `import` statement.
+    pub const IMPORT: u16 = 14;
+    /// `from … import` statement.
+    pub const FROM_IMPORT: u16 = 15;
+    /// One imported name (dotted module + optional `as` alias).
+    pub const ALIAS: u16 = 16;
+    /// `del` statement.
+    pub const DEL: u16 = 17;
+    /// `global` statement.
+    pub const GLOBAL: u16 = 18;
+    /// `assert` statement.
+    pub const ASSERT: u16 = 19;
+    /// `raise` statement.
+    pub const RAISE: u16 = 20;
+    /// Assignment (`a = b = c` chains flat inside one node).
+    pub const ASSIGN: u16 = 21;
+    /// Augmented assignment (`+=` family).
+    pub const AUG_ASSIGN: u16 = 22;
+    /// Bare expression statement.
+    pub const EXPR_STMT: u16 = 23;
+    /// Binary operation (op token inside the node).
+    pub const BINOP: u16 = 24;
+    /// Unary operation (`-`/`+`/`~`/`not`).
+    pub const UNARY: u16 = 25;
+    /// Chained comparison (`a < b < c` — one node, op tokens inside).
+    pub const COMPARE: u16 = 26;
+    /// Conditional expression (`x if c else y`).
+    pub const CONDITIONAL: u16 = 27;
+    /// Call `f(args)`.
+    pub const CALL: u16 = 28;
+    /// Attribute access `a.b`.
+    pub const ATTRIBUTE: u16 = 29;
+    /// Subscript `a[i]`.
+    pub const SUBSCRIPT: u16 = 30;
+    /// Tuple display / target list `(a, b)` or `a, b`.
+    pub const TUPLE: u16 = 31;
+    /// List display / list comprehension `[…]`.
+    pub const LIST: u16 = 32;
+    /// Set display / set comprehension `{…}` (no `:` pairs).
+    pub const SET: u16 = 33;
+    /// Dict display / dict comprehension `{k: v …}`.
+    pub const DICT: u16 = 34;
+    /// One `key: value` pair inside a dict.
+    pub const PAIR: u16 = 35;
+    /// One `for` clause (+ `if` guards) of a comprehension.
+    pub const COMPREHENSION: u16 = 36;
+    /// Generator expression `(e for …)`.
+    pub const GENERATOR: u16 = 37;
+    /// f-string literal (start/middle/interpolations/end inside).
+    pub const FSTRING: u16 = 38;
 }
 
 /// Token kinds — dense continuation of [`kinds`].
 pub mod token_kinds {
-    /// Identifier / keyword-shaped name.
-    pub const NAME: u16 = 24;
-    /// Int / float literal.
-    pub const NUMBER: u16 = 25;
-    /// Single-quoted string (no prefix).
-    pub const STRING: u16 = 26;
-    /// `f"` / `f'` opener.
-    pub const FSTRING_START: u16 = 27;
-    /// Literal text inside an f-string.
-    pub const FSTRING_TEXT: u16 = 28;
-    /// `{` opening an interpolation.
-    pub const INTERP_LBRACE: u16 = 29;
-    /// `}` closing an interpolation.
-    pub const INTERP_RBRACE: u16 = 30;
-    /// Closing quote of an f-string.
-    pub const FSTRING_END: u16 = 31;
-    /// Indentation increase.
-    pub const INDENT: u16 = 32;
-    /// Indentation decrease (one per level).
-    pub const DEDENT: u16 = 33;
-    /// Logical line end (outside brackets).
-    pub const NEWLINE: u16 = 34;
-    /// `if`
-    pub const KW_IF: u16 = 35;
-    /// `elif`
-    pub const KW_ELIF: u16 = 36;
-    /// `else`
-    pub const KW_ELSE: u16 = 37;
-    /// `while`
-    pub const KW_WHILE: u16 = 38;
-    /// `for`
-    pub const KW_FOR: u16 = 39;
-    /// `in`
-    pub const KW_IN: u16 = 40;
-    /// `def`
-    pub const KW_DEF: u16 = 41;
-    /// `return`
-    pub const KW_RETURN: u16 = 42;
-    /// `pass`
-    pub const KW_PASS: u16 = 43;
-    /// `break`
-    pub const KW_BREAK: u16 = 44;
-    /// `continue`
-    pub const KW_CONTINUE: u16 = 45;
-    /// `and`
-    pub const KW_AND: u16 = 46;
-    /// `or`
-    pub const KW_OR: u16 = 47;
-    /// `not`
-    pub const KW_NOT: u16 = 48;
-    /// `is`
-    pub const KW_IS: u16 = 49;
-    /// `True`
-    pub const KW_TRUE: u16 = 50;
-    /// `False`
-    pub const KW_FALSE: u16 = 51;
-    /// `None`
-    pub const KW_NONE: u16 = 52;
-    /// `+`
-    pub const PLUS: u16 = 53;
-    /// `-`
-    pub const MINUS: u16 = 54;
-    /// `*`
-    pub const STAR: u16 = 55;
-    /// `/`
-    pub const SLASH: u16 = 56;
-    /// `//`
-    pub const DSLASH: u16 = 57;
-    /// `%`
-    pub const PERCENT: u16 = 58;
-    /// `**`
-    pub const PSTAR: u16 = 59;
-    /// `==`
-    pub const EQ: u16 = 60;
-    /// `!=`
-    pub const NE: u16 = 61;
-    /// `<`
-    pub const LT: u16 = 62;
-    /// `>`
-    pub const GT: u16 = 63;
-    /// `<=`
-    pub const LE: u16 = 64;
-    /// `>=`
-    pub const GE: u16 = 65;
-    /// `=`
-    pub const ASSIGN: u16 = 66;
+    /// An identifier or keyword (keywords are text-matched by the
+    /// parser — the scanner emits `NAME` for both).
+    pub const NAME: u16 = 39;
+    /// An int/float/imaginary literal (text distinguishes).
+    pub const NUMBER: u16 = 40;
+    /// A string literal with any prefix except `f` (prefix included).
+    pub const STRING: u16 = 41;
+    /// f-string opener: the `f` prefix + opening quote(s).
+    pub const FSTRING_START: u16 = 42;
+    /// f-string literal chunk (escaped braces stay inside).
+    pub const FSTRING_MIDDLE: u16 = 43;
+    /// f-string closer: the closing quote(s).
+    pub const FSTRING_END: u16 = 44;
+    /// Line-indent run of a deeper line (`CPython` scanner suite).
+    pub const INDENT: u16 = 45;
+    /// Zero-width dedent marker, one per popped level.
+    pub const DEDENT: u16 = 46;
+    /// The `\n` / `\r\n` ending a logical line.
+    pub const NEWLINE: u16 = 47;
     /// `(`
-    pub const LPAREN: u16 = 67;
+    pub const LPAREN: u16 = 48;
     /// `)`
-    pub const RPAREN: u16 = 68;
+    pub const RPAREN: u16 = 49;
     /// `[`
-    pub const LBRACK: u16 = 69;
+    pub const LBRACKET: u16 = 50;
     /// `]`
-    pub const RBRACK: u16 = 70;
+    pub const RBRACKET: u16 = 51;
+    /// `{`
+    pub const LBRACE: u16 = 52;
+    /// `}`
+    pub const RBRACE: u16 = 53;
     /// `:`
-    pub const COLON: u16 = 71;
+    pub const COLON: u16 = 54;
+    /// `;`
+    pub const SEMI: u16 = 55;
     /// `,`
-    pub const COMMA: u16 = 72;
+    pub const COMMA: u16 = 56;
     /// `.`
-    pub const DOT: u16 = 73;
+    pub const DOT: u16 = 57;
     /// `->`
-    pub const ARROW: u16 = 74;
-    /// `@`
-    pub const AT: u16 = 75;
-    /// `|`
-    pub const PIPE: u16 = 76;
-    /// `^`
-    pub const CARET: u16 = 77;
+    pub const RARROW: u16 = 58;
+    /// `!` (f-string conversion; `!=` lexes as [`NEQ`]).
+    pub const BANG: u16 = 59;
+    /// `+`
+    pub const PLUS: u16 = 60;
+    /// `-`
+    pub const MINUS: u16 = 61;
+    /// `*`
+    pub const STAR: u16 = 62;
+    /// `**`
+    pub const POWER: u16 = 63;
+    /// `/`
+    pub const SLASH: u16 = 64;
+    /// `//`
+    pub const DOUBLE_SLASH: u16 = 65;
+    /// `%`
+    pub const PERCENT: u16 = 66;
+    /// `@` (matrix multiply; decorators use it too)
+    pub const AT_SIGN: u16 = 67;
+    /// `==`
+    pub const EQ: u16 = 68;
+    /// `!=`
+    pub const NEQ: u16 = 69;
+    /// `<=`
+    pub const LE: u16 = 70;
+    /// `>=`
+    pub const GE: u16 = 71;
+    /// `<`
+    pub const LT: u16 = 72;
+    /// `>`
+    pub const GT: u16 = 73;
     /// `&`
-    pub const AMP: u16 = 78;
+    pub const AMP: u16 = 74;
+    /// `|`
+    pub const PIPE: u16 = 75;
+    /// `^`
+    pub const CARET: u16 = 76;
     /// `~`
-    pub const TILDE: u16 = 79;
+    pub const TILDE: u16 = 77;
     /// `<<`
-    pub const LSHIFT: u16 = 80;
+    pub const LSHIFT: u16 = 78;
     /// `>>`
-    pub const RSHIFT: u16 = 81;
-    /// Whitespace trivia (never a token event, ADR-008).
-    pub const WHITESPACE: u16 = 82;
-    /// `# …` comment trivia.
-    pub const COMMENT: u16 = 83;
+    pub const RSHIFT: u16 = 79;
+    /// `=`
+    pub const EQUALS: u16 = 80;
+    /// `+=`
+    pub const PLUSEQ: u16 = 81;
+    /// `-=`
+    pub const MINUSEQ: u16 = 82;
+    /// `*=`
+    pub const STAREQ: u16 = 83;
+    /// `/=`
+    pub const SLASHEQ: u16 = 84;
+    /// `//=`
+    pub const DOUBLE_SLASHEQ: u16 = 85;
+    /// `%=`
+    pub const PERCENTEQ: u16 = 86;
+    /// `**=`
+    pub const POWEREQ: u16 = 87;
+    /// `@=`
+    pub const AT_SIGN_EQ: u16 = 88;
+    /// `<<=`
+    pub const LSHIFT_EQ: u16 = 89;
+    /// `>>=`
+    pub const RSHIFT_EQ: u16 = 90;
+    /// `&=`
+    pub const AMP_EQ: u16 = 91;
+    /// `|=`
+    pub const PIPE_EQ: u16 = 92;
+    /// `^=`
+    pub const CARET_EQ: u16 = 93;
+    /// Whitespace trivia: never a token event (ADR-008).
+    pub const WHITESPACE: u16 = 94;
+    /// `# …` comment trivia: never a token event (ADR-008).
+    pub const COMMENT: u16 = 95;
 }
 
-/// Implicit document-root kind — pack-local sentinel below the
-/// runtime-core sentinels.
-pub const ROOT_KIND: u16 = u16::MAX - 6;
+/// Implicit module-root kind for the green tree — pack-local sentinel,
+/// numbered below the runtime-core sentinels so the pack's dense
+/// `0..=95` ids stay collision-free.
+pub const ROOT_KIND: u16 = u16::MAX - 5;
 
-/// Parse Python source into a green tree (the full integration).
+/// Parse Python-subset source into a green tree (the full integration:
+/// `parse_events` → `process` → `drive_sink` → `TreeBuilder`).
 ///
 /// # Errors
-/// Structural errors propagate as `Err`; syntax errors are recovered.
+/// Structural errors (a malformed event stream) propagate as `Err`;
+/// malformed *Python* is recovered, not an error.
 pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
     reference::parse(source)
 }
