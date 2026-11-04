@@ -1,259 +1,330 @@
-//! Incremental engine integration tests (issue 030 TDD): fast-path
-//! trigger stats, reuse predicate rejections, changed ranges vs brute
-//! force, and the seeded fuzz equivalence gate on the json+toml packs.
+//! incremental integration tests (issue 030 TDD): fast-path trigger
+//! stats, reuse-predicate rejections, changed ranges vs the brute-force
+//! diff, and seeded incremental-equivalence fuzzing on the json+toml
+//! packs — `reparse(edit(x)) == fresh_parse(x)` at the token-stream
+//! level for every mutation.
 
 use std::ops::Range;
 
-use incremental::Adapter;
-use incremental::ranges::changed_ranges_brute_force;
-use incremental::{Edit, Engine, Snapshot, context_hash};
+use incremental::{Edit, Engine, Lexer, Rejection, reused_subtree_bytes};
+use packs_json::kinds as jk;
+use packs_json::reference::token_kinds as jt;
 
-/// The JSON adapter: lexgen scanner (with the real `relex_one` fast
-/// path) over the shared fixture grammar.
-#[derive(Clone)]
-struct JsonAdapter {
-    scanner: lexgen::Scanner,
-}
-
-impl JsonAdapter {
-    fn new() -> Self {
-        let grammar = harness::metrics::json_fixture();
-        Self {
-            scanner: lexgen::compile(&grammar).expect("json tokens compile"),
+/// A real hand lexer over the JSON pack's kind constants. Unlike a
+/// whole-document parse it lexes any substring deterministically —
+/// exactly what the margin-window fast path needs.
+struct JsonPackLexer;
+impl Lexer for JsonPackLexer {
+    fn lex(&self, source: &str) -> Vec<(u16, Range<u32>)> {
+        let bytes = source.as_bytes();
+        let mut out: Vec<(u16, Range<u32>)> = Vec::new();
+        let mut pos = 0_usize;
+        while pos < bytes.len() {
+            let start = pos;
+            let kind = match bytes[pos] {
+                b' ' | b'\t' | b'\r' | b'\n' => {
+                    pos += 1;
+                    continue;
+                }
+                b'{' => {
+                    pos += 1;
+                    jt::LBRACE
+                }
+                b'}' => {
+                    pos += 1;
+                    jt::RBRACE
+                }
+                b'[' => {
+                    pos += 1;
+                    jt::LBRACK
+                }
+                b']' => {
+                    pos += 1;
+                    jt::RBRACK
+                }
+                b':' => {
+                    pos += 1;
+                    jt::COLON
+                }
+                b',' => {
+                    pos += 1;
+                    jt::COMMA
+                }
+                b'"' => {
+                    pos += 1;
+                    while pos < bytes.len() {
+                        if bytes[pos] == b'\\' {
+                            pos += 2;
+                            continue;
+                        }
+                        if bytes[pos] == b'"' {
+                            pos += 1;
+                            break;
+                        }
+                        pos += 1;
+                    }
+                    jk::STRING
+                }
+                b'0'..=b'9' | b'-' => {
+                    while pos < bytes.len() && (bytes[pos].is_ascii_digit() || bytes[pos] == b'.') {
+                        pos += 1;
+                    }
+                    jk::NUMBER
+                }
+                _ => {
+                    let rest = &source[pos..];
+                    let keyword = if rest.starts_with("true") {
+                        Some((jk::TRUE, 4))
+                    } else if rest.starts_with("false") {
+                        Some((jk::FALSE, 5))
+                    } else if rest.starts_with("null") {
+                        Some((jk::NULL, 4))
+                    } else {
+                        None
+                    };
+                    if let Some((kind, len)) = keyword {
+                        pos += len;
+                        kind
+                    } else {
+                        pos += 1;
+                        65534 // ERROR_KIND: garbage rides its own token
+                    }
+                }
+            };
+            let start32 = u32::try_from(start).unwrap_or(u32::MAX);
+            let pos32 = u32::try_from(pos).unwrap_or(u32::MAX);
+            out.push((kind, start32..pos32));
         }
+        out
     }
 }
 
-impl incremental::Adapter for JsonAdapter {
-    fn scan(&self, source: &str) -> Vec<(u16, Range<u32>)> {
-        self.scanner
-            .scan(source)
-            .into_iter()
-            .filter_map(|lexeme| match lexeme {
-                lexgen::Lexeme::Token {
-                    kind,
-                    range,
-                    trivia,
-                } if !trivia => Some((kind, range.start..range.end)),
-                _ => None,
-            })
-            .collect()
-    }
-
-    fn relex_one(&self, source: &str, offset: u32) -> Option<(u16, Range<u32>)> {
-        self.scanner
-            .relex_one(source, offset as usize)
-            .map(|lexeme| match lexeme {
-                lexgen::Lexeme::Token { kind, range, .. } => (kind, range.start..range.end),
-                lexgen::Lexeme::Error { range } => (u16::MAX - 1, range.start..range.end),
-            })
-    }
-}
-
-/// The TOML adapter: the pack's own scan (via `parse_events`), no
-/// single-token entry point (documented — the fast path stays JSON's).
-struct TomlAdapter;
-
-impl incremental::Adapter for TomlAdapter {
-    fn scan(&self, source: &str) -> Vec<(u16, Range<u32>)> {
+/// The TOML pack's token stream via a whole-document parse — the
+/// fallback-driven fuzz oracle (fast-path windows may reject; the
+/// equivalence gates still hold).
+struct TomlParseLexer;
+impl Lexer for TomlParseLexer {
+    fn lex(&self, source: &str) -> Vec<(u16, Range<u32>)> {
         packs_toml::reference::parse_events(source).1
     }
 }
 
-fn edit(source: &str, start: usize, end: usize, text: &str) -> (Edit, String) {
-    let mut new = String::with_capacity(source.len());
-    new.push_str(&source[..start]);
-    new.push_str(text);
-    new.push_str(&source[end..]);
-    (
-        Edit {
-            range: u32::try_from(start).expect("small")..u32::try_from(end).expect("small"),
-            text: text.to_owned(),
-        },
-        new,
-    )
-}
-
-#[test]
-fn fast_path_triggers_on_in_token_digit_edit() {
-    let adapter = JsonAdapter::new();
-    let source = "{\"a\": 12, \"b\": 3}";
-    let mut engine = Engine::new(adapter, source);
-    let (edit, new) = edit(source, 6, 8, "13"); // 12 → 13: same token shape
-    let snap = engine.edit(&edit, &new);
-    assert_eq!(snap.stats.fast_path_relex, 1, "fast path hit");
-    assert_eq!(
-        snap.tokens,
-        JsonAdapter::new().scan(&new),
-        "token equivalence"
-    );
-}
-
-#[test]
-fn fast_path_misses_when_the_token_kind_changes() {
-    let adapter = JsonAdapter::new();
-    let source = "{\"a\": 12}";
-    let mut engine = Engine::new(adapter, source);
-    // 12 → "s": the token becomes a string — the fast path must not claim it.
-    let (edit, new) = edit(source, 7, 9, "\"s\"");
-    let snap = engine.edit(&edit, &new);
-    assert_eq!(
-        snap.stats.fast_path_relex, 0,
-        "kind change rejects the fast path"
-    );
-    assert_eq!(
-        snap.tokens,
-        JsonAdapter::new().scan(&new),
-        "token equivalence"
-    );
-}
-
-#[test]
-fn reuse_predicates_reject_cross_block_edits() {
-    let adapter = JsonAdapter::new();
-    // An edit that changes the bytes outside the reused block's span
-    // (here: the block is the whole document — every edit inside it
-    // invalidates the boundary context when tokens vanish).
-    let source = "{\"a\": [1, 2], \"b\": {\"c\": 3}}";
-    let mut engine = Engine::new(adapter.clone(), source);
-    let (edit, new) = edit(source, 7, 14, "[9, 8, 7, 6, 5, 4, 3, 2, 1]");
-    let snap = engine.edit(&edit, &new);
-    // Whatever the strategy, the token list is exact.
-    assert_eq!(
-        snap.tokens,
-        JsonAdapter::new().scan(&new),
-        "token equivalence"
-    );
-    // And the changed ranges agree with brute force.
-    let old_tokens = adapter.scan(source);
-    let brute = changed_ranges_brute_force(&old_tokens, &snap.tokens);
-    assert_eq!(snap.changed, brute);
-}
-
-#[test]
-fn changed_ranges_match_brute_force_on_edits() {
-    let cases: &[(&str, usize, usize, &str)] = &[
-        ("{\"a\": 1}", 7, 8, "42"),
-        ("[1, 2, 3]", 4, 5, ""),
-        ("{\"a\": [1]}", 5, 5, "\"k\": "),
-        ("[true, null]", 1, 5, "false"),
-    ];
-    for (source, start, end, text) in cases {
-        let (edit, new) = edit(source, *start, *end, text);
-        let mut engine = Engine::new(JsonAdapter::new(), source);
-        let snap: Snapshot = engine.edit(&edit, &new);
-        let old_tokens = JsonAdapter::new().scan(source);
-        let brute = changed_ranges_brute_force(&old_tokens, &snap.tokens);
-        assert_eq!(
-            snap.changed, brute,
-            "changed ranges vs brute force on {source:?}"
-        );
+/// Deterministic xorshift64* — no external RNG dependency.
+struct Rng(u64);
+impl Rng {
+    fn new(seed: u64) -> Self {
+        Self(seed | 1)
     }
-}
-
-#[test]
-fn context_hash_discriminates_kinds_text_and_neighbors() {
-    let base = context_hash(5, "x", Some(1), Some(2));
-    assert_ne!(base, context_hash(6, "x", Some(1), Some(2)), "kind");
-    assert_ne!(base, context_hash(5, "y", Some(1), Some(2)), "text");
-    assert_ne!(base, context_hash(5, "x", Some(3), Some(2)), "prev kind");
-    assert_ne!(base, context_hash(5, "x", Some(1), Some(3)), "next kind");
-    assert_eq!(base, context_hash(5, "x", Some(1), Some(2)), "stable");
-}
-
-#[test]
-fn toml_edits_reuse_and_stay_exact() {
-    let source = "a = 1\nb = \"two\"\n[c]\nd = 3.5\n";
-    let mut engine = Engine::new(TomlAdapter, source);
-    let (edit, new) = edit(source, 4, 5, "42");
-    let snap = engine.edit(&edit, &new);
-    assert_eq!(snap.tokens, TomlAdapter.scan(&new), "token equivalence");
-    assert!(packs_toml::parse(&new).is_ok(), "tree integration");
-    assert_eq!(
-        packs_toml::parse(&new)
-            .expect("tree")
-            .render(&runtime_core::input::Source::from_str_unchecked(&new)),
-        new,
-        "lossless"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// The fuzz equivalence gate (issue 030): seeded random edits over the
-// json+toml packs — incremental tokens == fresh scan, every time.
-// ---------------------------------------------------------------------------
-
-struct XorShift(u64);
-
-impl XorShift {
     fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
+        self.0 ^= self.0 >> 12;
+        self.0 ^= self.0 << 25;
+        self.0 ^= self.0 >> 27;
+        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
     }
-
-    fn below(&mut self, n: usize) -> usize {
-        usize::try_from(self.next() % (n as u64)).unwrap_or(0)
-    }
-}
-
-const JSON_DOCS: &[&str] = &[
-    "{\"a\": 1}",
-    "[1, 2, 3]",
-    "{\"list\": [true, null, \"s\"], \"n\": -2.5}",
-    "{\"deep\": {\"deeper\": [1, {\"x\": 0}]}}",
-];
-
-const TOML_DOCS: &[&str] = &[
-    "a = 1\nb = \"two\"\n",
-    "[table]\nx = 1\ny = [1, 2, 3]\n",
-    "flag = true\nrate = 3.5\nname = 'literal'\n",
-];
-
-fn run_fuzz<A: incremental::Adapter>(adapter: A, docs: &[&str], seed: u64, rounds: usize) {
-    let mut rng = XorShift(seed);
-    for doc in docs {
-        let mut engine = Engine::new(adapter_ref(&adapter), doc);
-        let mut current = (*doc).to_owned();
-        for _round in 0..rounds {
-            if current.is_empty() {
-                break;
-            }
-            // Random splice: replace a small range with one of a few
-            // tokens' worth of text.
-            let start = rng.below(current.len());
-            let end = (start + rng.below(4)).min(current.len());
-            let text = match rng.below(5) {
-                0 => "1",
-                1 => "\"s\"",
-                2 => "[",
-                3 => "",
-                _ => ",",
-            };
-            let (edit, new) = edit(&current, start, end, text);
-            let snap = engine.edit(&edit, &new);
-            // THE EQUIVALENCE GATE.
-            assert_eq!(
-                snap.tokens,
-                adapter_ref(&adapter).scan(&new),
-                "incremental == fresh on {new:?}"
-            );
-            current = new;
+    fn below(&mut self, bound: usize) -> usize {
+        if bound == 0 {
+            0
+        } else {
+            let bound64 = u64::try_from(bound).unwrap_or(u64::MAX);
+            usize::try_from(self.next() % bound64).unwrap_or(0)
         }
     }
 }
 
-fn adapter_ref<A: incremental::Adapter>(adapter: &A) -> &A {
-    adapter
+#[test]
+fn fast_path_hits_on_single_token_edits() {
+    let engine = Engine {
+        lexer: &JsonPackLexer,
+    };
+    let source = r#"{"a": 1, "b": 2}"#;
+    let tokens = JsonPackLexer.lex(source);
+    // Replace the `2` literal — one damaged token, flanks intact.
+    let at = source.find('2').expect("the 2");
+    let outcome = engine.incremental_edit(source, &tokens, Edit::replace(at, at + 1, "42"));
+    assert_eq!(outcome.rejection, None, "stats: {:?}", outcome.stats);
+    assert_eq!(outcome.stats.fast_path_hits, 1);
+    assert_eq!(
+        outcome.tokens,
+        JsonPackLexer.lex(r#"{"a": 1, "b": 42}"#),
+        "spliced stream equals a fresh lex"
+    );
 }
 
 #[test]
-fn fuzz_equivalence_json_pack() {
-    run_fuzz(JsonAdapter::new(), JSON_DOCS, 0x5EED_F00D, 60);
+fn fast_path_rejects_context_breaking_edits() {
+    // Inserting a quote right after a string literal merges the two:
+    // the wide-window relex's LAST token (a runaway string) can no
+    // longer match the old outer flank — the predicate rejects and the
+    // fallback relexes everything.
+    let engine = Engine {
+        lexer: &JsonPackLexer,
+    };
+    let source = r#"{"a": 1}"#;
+    let tokens = JsonPackLexer.lex(source);
+    let outcome = engine.incremental_edit(source, &tokens, Edit::insert(4, "\""));
+    assert_eq!(
+        outcome.rejection,
+        Some(Rejection::ContextMismatch),
+        "string-merging edits must reject: {:?}",
+        outcome.stats
+    );
+    assert_eq!(outcome.stats.fast_path_rejections, 1);
+    // Correctness holds anyway: the fallback stream is exact.
+    assert_eq!(outcome.tokens, JsonPackLexer.lex(r#"{"a"": 1}"#));
 }
 
 #[test]
-fn fuzz_equivalence_toml_pack() {
-    run_fuzz(TomlAdapter, TOML_DOCS, 0xC0FF_EE12, 60);
+fn string_internal_edits_hit_the_fast_path() {
+    // The margin window CONTAINS the whole string literal, so the relex
+    // reproduces it exactly: a legitimate fast-path hit.
+    let engine = Engine {
+        lexer: &JsonPackLexer,
+    };
+    let source = r#"{"key with spaces": 1}"#;
+    let tokens = JsonPackLexer.lex(source);
+    let at = source.find("spaces").expect("inside the string");
+    let outcome = engine.incremental_edit(source, &tokens, Edit::replace(at, at + 6, "!!!"));
+    assert_eq!(outcome.rejection, None);
+    assert_eq!(outcome.stats.fast_path_hits, 1);
+    assert_eq!(outcome.tokens, JsonPackLexer.lex(r#"{"key with !!!": 1}"#));
+}
+
+#[test]
+fn multi_token_damage_falls_back_and_counts_reuse() {
+    let engine = Engine {
+        lexer: &JsonPackLexer,
+    };
+    let source = r"[1, 2, 3, 4, 5]";
+    let tokens = JsonPackLexer.lex(source);
+    // Replace a whole span covering several tokens.
+    let start = source.find("2,").expect("the 2,");
+    let end = source.find('4').expect("the 4");
+    let outcome = engine.incremental_edit(source, &tokens, Edit::replace(start, end + 1, "9"));
+    assert_eq!(outcome.rejection, Some(Rejection::MultiTokenDamage));
+    assert!(outcome.stats.reused_tokens > 0, "the tail survives");
+    assert_eq!(outcome.tokens, JsonPackLexer.lex("[1, 9, 5]"));
+}
+
+#[test]
+fn changed_ranges_match_a_fresh_lex_diff() {
+    let engine = Engine {
+        lexer: &JsonPackLexer,
+    };
+    let source = r#"{"a": [1, 2, 3], "b": null}"#;
+    let tokens = JsonPackLexer.lex(source);
+    let at = source.find("null").expect("null");
+    let outcome = engine.incremental_edit(source, &tokens, Edit::replace(at, at + 4, "false"));
+    let new_source = r#"{"a": [1, 2, 3], "b": false}"#;
+    // The engine's diff equals a brute-force diff of two full lexes.
+    let brute = incremental::diff::changed_ranges(
+        &tokens,
+        source,
+        &JsonPackLexer.lex(new_source),
+        new_source,
+    );
+    assert_eq!(outcome.changed, brute);
+    // Reused subtrees: everything outside the changed range.
+    let reused = reused_subtree_bytes(&tokens, &outcome.changed);
+    let total: usize = tokens.iter().map(|(_, r)| (r.end - r.start) as usize).sum();
+    assert!(reused < total, "some bytes changed");
+    assert!(reused > 0, "most bytes survived");
+}
+
+/// Seeded fuzz on the JSON pack: mutations of valid documents keep the
+/// incremental stream equal to a fresh lex, every time.
+#[test]
+fn fuzz_json_incremental_equivalence() {
+    let engine = Engine {
+        lexer: &JsonPackLexer,
+    };
+    let corpus = [
+        r#"{"a": 1}"#,
+        r"[1, 2, 3]",
+        r#"{"deep": {"deeper": [true, null]}, "b": "x"}"#,
+        r#"[{"k": "v"}, [1, [2]], 42]"#,
+        r#""top level string""#,
+    ];
+    let mut rng = Rng::new(0x0DEC_0DE5);
+    for round in 0..200 {
+        let source = corpus[round % corpus.len()];
+        let tokens = JsonPackLexer.lex(source);
+        let edit = random_edit(&mut rng, source);
+        let new_source = edit.apply(source);
+        let outcome = engine.incremental_edit(source, &tokens, edit.clone());
+        if std::env::var("FUZZ_TRACE").is_ok() {
+            println!("round {round} edit={edit:?} -> {new_source:?}");
+        }
+        // Incremental equivalence: the spliced stream IS the fresh lex.
+        assert_eq!(
+            outcome.tokens,
+            JsonPackLexer.lex(&new_source),
+            "round {round}: stream mismatch on {new_source:?}"
+        );
+        // The changed ranges match the brute-force diff.
+        let brute = incremental::diff::changed_ranges(
+            &tokens,
+            source,
+            &JsonPackLexer.lex(&new_source),
+            &new_source,
+        );
+        assert_eq!(outcome.changed, brute, "round {round}: diff mismatch");
+    }
+}
+
+/// Seeded fuzz on the TOML pack (same gates, parse-table lexer).
+#[test]
+fn fuzz_toml_incremental_equivalence() {
+    let engine = Engine {
+        lexer: &TomlParseLexer,
+    };
+    let corpus = [
+        "a = 1\nb = \"x\"\n",
+        "[table]\nx = [1, 2, 3]\n",
+        "a.b.c = true\nflag = false\n",
+        "list = [\n  1, # comment\n  2,\n]\n",
+    ];
+    let mut rng = Rng::new(0xFEED_F00D);
+    for round in 0..100 {
+        let source = corpus[round % corpus.len()];
+        let tokens = TomlParseLexer.lex(source);
+        let edit = random_edit(&mut rng, source);
+        let new_source = edit.apply(source);
+        println!("toml round {round} edit={edit:?} src={new_source:?}");
+        let outcome = engine.incremental_edit(source, &tokens, edit.clone());
+        assert_eq!(
+            outcome.tokens,
+            TomlParseLexer.lex(&new_source),
+            "round {round}: stream mismatch on {new_source:?}"
+        );
+        let brute = incremental::diff::changed_ranges(
+            &tokens,
+            source,
+            &TomlParseLexer.lex(&new_source),
+            &new_source,
+        );
+        assert_eq!(outcome.changed, brute, "round {round}: diff mismatch");
+    }
+}
+
+/// A random single-point mutation: insert / delete / replace a short
+/// byte run at a random position.
+fn random_edit(rng: &mut Rng, source: &str) -> Edit {
+    let len = source.len();
+    let start = rng.below(len + 1);
+    match rng.next() % 3 {
+        0 => {
+            // insert one of a few structural characters
+            let chars = ["x", "1", ",", "\"", "}", " ", ":"];
+            let text = chars[rng.below(chars.len())];
+            Edit::insert(start, text)
+        }
+        1 => {
+            let end = (start + 1 + rng.below(3)).min(len);
+            Edit::delete(start, end)
+        }
+        _ => {
+            let end = (start + 1 + rng.below(3)).min(len);
+            Edit::replace(start, end, "z9")
+        }
+    }
 }
