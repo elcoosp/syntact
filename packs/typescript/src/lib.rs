@@ -45,7 +45,8 @@
 //! # Trivia discipline (ADR-008)
 //!
 //! Whitespace, newlines, `//` line comments and `/* … */` (incl. `/**`
-//! doc comments) are never token events — they ride [`TriviaRecord`]s
+//! doc comments) are never token events — they ride
+//! [`runtime_core::sink::TriviaRecord`]s
 //! attached at tree-build time, so `render(parse(x)) == x`
 //! byte-for-byte. Newlines are trivia everywhere: statement structure
 //! is brace + ASI based, not line based.
