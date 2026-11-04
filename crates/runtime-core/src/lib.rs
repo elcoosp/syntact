@@ -13,17 +13,10 @@
 //!   [`tree::TreeBuilder`]), byte-faithful rendering, interning.
 //! - [`TokenSet`] + [`diagnostic`] — 192-bit expected sets and the
 //!   diagnostic side table.
-//! - [`persistent`] — versioned red-tree handles: persistent-red
-//!   mode with copy-on-write splices and version retention (issue
-//!   036), single-writer / multi-reader invariants.
-//! - [`parallel`] — deterministic parallel query mode over chunk
-//!   plans: workers per chunk, merge ordered by chunk position
-//!   (issue 036).
 
 pub mod diagnostic;
 pub mod events;
 pub mod input;
-pub mod parallel;
 pub mod persistent;
 pub mod sink;
 pub mod tree;
