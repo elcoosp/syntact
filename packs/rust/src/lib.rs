@@ -44,7 +44,7 @@
 //! # Trivia discipline (ADR-008)
 //!
 //! Whitespace and comments are never token events — they ride
-//! [`TriviaRecord`]s, so `render(parse(x)) == x` byte-for-byte.
+//! [`runtime_core::sink::TriviaRecord`]s, so `render(parse(x)) == x` byte-for-byte.
 
 pub mod reference;
 
