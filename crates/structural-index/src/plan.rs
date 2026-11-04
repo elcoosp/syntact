@@ -113,6 +113,10 @@ pub struct ChunkPlan {
 /// code positions (never inside a string or comment) — each chunk is
 /// safe to parse in parallel. Deterministic: boundaries are the
 /// depth-0 code-region starts nearest the even split points.
+///
+/// # Panics
+/// Never: the boundary list is seeded with `0`, so `last()` always
+/// finds an element during merging.
 #[must_use]
 pub fn plan_chunks(source: &str, index: &RegionIndex, target: usize) -> Vec<ChunkPlan> {
     let len = u32::try_from(source.len()).unwrap_or(u32::MAX);
