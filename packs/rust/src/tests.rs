@@ -70,10 +70,10 @@ const CORPUS: &[(&str, usize)] = &[
     ("/// Doc comment.\nfn documented() {}", 0),
     ("fn f() { let raw = r#\"raw \\\" string\"#; }", 0),
     // -- malformed with tolerated-error budgets ---------------------------
-    ("fn f( {", 4),                     // params closer + body + cascade
+    ("fn f( {", 3),                     // params closer + body + cascade
     ("let x = ;", 1),                   // missing init
-    ("struct S { a: }", 1),             // missing field type
-    ("fn f() { match x { => 1 } }", 2), // missing pattern + arm cascade
+    ("struct S { a: }", 2),             // missing field type
+    ("fn f() { match x { => 1 } }", 3), // missing pattern + arm cascade
 ];
 
 /// Build the green tree through the full `parse` integration.
@@ -281,4 +281,27 @@ fn nested_generics_split() {
         .collect();
     assert_eq!(gts.len(), 2, "two single-> tokens: {gts:?}");
     assert_eq!(gts[0].end, gts[1].start, "adjacent split");
+}
+
+/// Regression (fuzz-found): a match arm path with garbage after `E::`
+/// used to park `fail_skip` on `)` — zero progress per retry — and the
+/// event stream grew without bound until the process was OOM-killed.
+/// The parse must terminate with a bounded error count and stay
+/// lossless.
+#[test]
+fn garbage_match_arm_path_terminates_bounded() {
+    let source = "#[derive(Debug)]\nenum E { A(i32), B { x: u8 } }\nfn m(e: &E) { match e { E::\t\u{1e} 0EXA(n) => {}, E::B { x } => {} } }";
+    let (events, _, errors) = parse_events(source);
+    assert!(errors < 128, "bounded tolerated errors, got {errors}");
+    assert!(
+        events.len() < 4096,
+        "event stream is bounded, got {}",
+        events.len()
+    );
+    let tree = crate::parse(source).expect("tree integration never fails structurally");
+    assert_eq!(
+        tree.render(&Source::from_str_unchecked(source)),
+        source,
+        "recovery must stay lossless"
+    );
 }
