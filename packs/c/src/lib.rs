@@ -1,272 +1,217 @@
-//! # packs-c — the C grammar pack (issue 034, documented subset)
+//! # packs-c — the C11-subset grammar pack (issue 034)
 //!
-//! Reference parser for a C11 subset on the runtime-core event
-//! protocol.
+//! Reference parser for a documented C11 subset on the runtime-core
+//! event protocol: declarations with pointer/type qualifiers and the
+//! full declarator grammar (`int (*f)(void)`), function definitions,
+//! structs/unions/enums, statements, precedence expressions, and
+//! preprocessor lines as structured trivia.
 //!
-//! **The subset** (everything else errors and recovers):
-//! - declarations with pointer / qualifier spellings (`int *const x`,
-//!   `static unsigned long n`), `typedef` declarations feeding the
-//!   **typedef shadowing heuristic** (a known typedef name in
-//!   `T * x;` / `T (f)(…);` starts a declaration, otherwise the
-//!   statement is an expression);
-//! - function definitions with full declarators — `int (*f)(void)`
-//!   (parenthesized pointer-to-function), `int a[3]`, `char **argv`;
-//! - structs / unions / enums with fields and enumerators;
-//! - statements: compound, `if`/`else`, `while`, `do…while`, `for`
-//!   (declaration or expression head), `return`, `break`,
-//!   `continue`, expression statements;
-//! - precedence expressions: assignment (right-assoc), `?:`,
-//!   `|| && | ^ & == != < > <= >= << >> + - * / %`, unary
-//!   (`! ~ - + * & ++ --`), casts via the `(T)` lookahead, calls,
-//!   index, field access (`.` and `->`), `sizeof`, initializers
-//!   `{1, 2, {3}}`;
-//! - preprocessor lines (`#include`, `#define`, `#ifdef`, …, with
-//!   `\`-continuations) as structured DIRECTIVE nodes.
+//! # Documented subset (v0)
 //!
-//! **Boundaries** (documented): no bit-field widths beyond tokens, no
-//! `_Atomic`/`_Generic`/`_Static_assert`, no VLAs beyond `[expr]`
-//! token soup, no `goto`/labels, no compound literals, declarations
-//! keep declarator spelling as token soup inside the node.
+//! - **Declarations**: base types (`int`, `char`, `void`, `unsigned`,
+//!   `signed`, `long`, `short`, `float`, `double`, `const`, `static`,
+//!   `struct S`, `enum E`, `union U`, typedef names), declarators with
+//!   `*` pointers, `[N]` arrays, `(params)` function prototypes, and
+//!   parenthesised function-pointer declarators (`int (*f)(void)`).
+//!   Initialisers parse as expressions.
+//! - **Statements**: expression statements, `if`/`else`, `while`,
+//!   `do…while`, `for` (init;cond;step), `return`, `break`,
+//!   `continue`, blocks, empty `;`.
+//! - **Expressions**: precedence climbing over the C11 operator table
+//!   (comma lowest, assignment right-assoc, ternary, `||…` to
+//!   postfix calls/index/member access, unary `* & - ! ~ ++ --`
+//!   and `sizeof`).
+//! - **Typedef shadowing heuristic**: a name the lexer has seen in a
+//!   `typedef` is treated as a type in later declarations (a
+//!   single-file, first-definition-wins heuristic — documented).
+//! - **Preprocessor**: `#…` lines (up to the newline) become one
+//!   PREPROC node holding the raw line tokens — structured trivia for
+//!   the grammar, still lossless.
+//! - Strings/chars with escapes, line/block comments as trivia,
+//!   newlines are pure trivia (C is brace- and semicolon-structured).
+//!
+//! Kind numbering (documented mapping, mirroring the other packs):
+//! node kinds in [`kinds`], leaf tokens + punctuation in
+//! [`token_kinds`] (dense continuation), offending regions via
+//! [`runtime_core::ERROR_KIND`], implicit root [`ROOT_KIND`].
 
-pub mod lexer;
 pub mod reference;
 
-/// Node kinds for the C grammar (dense).
+/// Node kinds for the C11-subset grammar (dense).
 pub mod kinds {
-    /// `ret f(params) { … }`.
-    pub const FUNCTION_DEF: u16 = 0;
-    /// A declaration (`int x = 5;`, `typedef …`, `struct S s;`).
-    pub const DECLARATION: u16 = 1;
-    /// `(a, b)` parameter list.
-    pub const PARAM_LIST: u16 = 2;
-    /// One parameter declaration.
-    pub const PARAM_DECL: u16 = 3;
-    /// `struct S { … }` specifier.
-    pub const STRUCT_SPEC: u16 = 4;
-    /// `union U { … }` specifier.
-    pub const UNION_SPEC: u16 = 5;
-    /// `enum E { … }` specifier.
-    pub const ENUM_SPEC: u16 = 6;
-    /// One enumerator `A (= expr)?`.
-    pub const ENUMERATOR: u16 = 7;
-    /// `Type name;` inside a struct/union body.
-    pub const FIELD_DECL: u16 = 8;
-    /// `{ stmts }`.
-    pub const COMPOUND_STMT: u16 = 9;
-    /// `if (c) s (else s)?`.
-    pub const IF_STMT: u16 = 10;
-    /// `while (c) s`.
-    pub const WHILE_STMT: u16 = 11;
-    /// `do s while (c);`.
-    pub const DO_STMT: u16 = 12;
-    /// `for (head) s`.
-    pub const FOR_STMT: u16 = 13;
-    /// `return (e)?;`.
-    pub const RETURN_STMT: u16 = 14;
-    /// `break;`.
-    pub const BREAK_STMT: u16 = 15;
-    /// `continue;`.
-    pub const CONTINUE_STMT: u16 = 16;
-    /// `e;`.
-    pub const EXPR_STMT: u16 = 17;
-    /// `f(args)` call.
-    pub const CALL_EXPR: u16 = 18;
-    /// `a.b` / `a->b`.
-    pub const FIELD_ACCESS: u16 = 19;
-    /// `a[i]`.
-    pub const INDEX_EXPR: u16 = 20;
-    /// `(T) e` cast.
-    pub const CAST_EXPR: u16 = 21;
-    /// Binary operation (op kind in the child token).
-    pub const BIN_EXPR: u16 = 22;
-    /// Unary `! ~ - + * & ++ -- sizeof`.
-    pub const UNARY_EXPR: u16 = 23;
-    /// `c ? t : e`.
-    pub const COND_EXPR: u16 = 24;
-    /// `( e )` grouping.
-    pub const PAREN_EXPR: u16 = 25;
-    /// `{1, 2, {3}}` initializer list.
-    pub const INIT_LIST: u16 = 26;
-    /// `(T)` / `sizeof(T)` type spellings.
-    pub const TYPE_NAME: u16 = 27;
-    /// One preprocessor line (`#include`, `#define`, …).
-    pub const DIRECTIVE: u16 = 28;
+    /// A declaration `int x, *p;`.
+    pub const DECLARATION: u16 = 0;
+    /// A function definition `int f(…) { … }`.
+    pub const FUNCTION: u16 = 1;
+    /// A parameter list.
+    pub const PARAMS: u16 = 2;
+    /// `struct`/`union`/`enum` specifier.
+    pub const RECORD: u16 = 3;
+    /// One struct/union field or enum constant.
+    pub const MEMBER: u16 = 4;
+    /// `{ … }` block.
+    pub const BLOCK: u16 = 5;
+    /// `if` statement.
+    pub const IF: u16 = 6;
+    /// `else` clause.
+    pub const ELSE: u16 = 7;
+    /// `while` / `do…while`.
+    pub const WHILE: u16 = 8;
+    /// `for (…;…;…)`.
+    pub const FOR: u16 = 9;
+    /// `return`.
+    pub const RETURN: u16 = 10;
+    /// `break`/`continue`.
+    pub const JUMP: u16 = 11;
+    /// `typedef`.
+    pub const TYPEDEF: u16 = 12;
+    /// `#…` preprocessor line (structured trivia).
+    pub const PREPROC: u16 = 13;
+    /// Expression statement.
+    pub const EXPR_STMT: u16 = 14;
+    /// Assignment expression (right-assoc).
+    pub const ASSIGN: u16 = 15;
+    /// Binary operation (incl. comparisons).
+    pub const BINOP: u16 = 16;
+    /// Unary `* & - ! ~ ++ -- sizeof`.
+    pub const UNARY: u16 = 17;
+    /// Ternary `c ? a : b`.
+    pub const CONDITIONAL: u16 = 18;
+    /// Call `f(args)`.
+    pub const CALL: u16 = 19;
+    /// Index `a[i]`.
+    pub const INDEX: u16 = 20;
+    /// Member `a.b` / `a->b`.
+    pub const MEMBER_ACCESS: u16 = 21;
+    /// Cast `(T) expr`.
+    pub const CAST: u16 = 22;
+    /// sizeof / `enum`-tag / parenthesised type in expressions.
+    pub const TYPE_EXPR: u16 = 23;
+    /// A declarator group `(*f)(…)` / `x[3]`.
+    pub const DECLARATOR: u16 = 24;
 }
 
 /// Token kinds — dense continuation of [`kinds`].
 pub mod token_kinds {
-    /// Identifier.
-    pub const IDENT: u16 = 29;
-    /// Integer literal (hex / octal / decimal, suffix included).
-    pub const INT_LIT: u16 = 30;
-    /// Float literal (`1.5`, `1e3`, suffix included).
-    pub const FLOAT_LIT: u16 = 31;
-    /// `'a'` char literal with escapes.
-    pub const CHAR_LIT: u16 = 32;
-    /// `"…"` string with escapes.
-    pub const STRING_LIT: u16 = 33;
-    /// One preprocessor line `# …` (with `\` continuations).
-    pub const PP_LINE: u16 = 34;
-    /// `+`
-    pub const PLUS: u16 = 35;
-    /// `-`
-    pub const MINUS: u16 = 36;
-    /// `*`
-    pub const STAR: u16 = 37;
-    /// `/`
-    pub const SLASH: u16 = 38;
-    /// `%`
-    pub const PERCENT: u16 = 39;
-    /// `&`
-    pub const AMP: u16 = 40;
-    /// `|`
-    pub const PIPE: u16 = 41;
-    /// `^`
-    pub const CARET: u16 = 42;
-    /// `~`
-    pub const TILDE: u16 = 43;
-    /// `!`
-    pub const BANG: u16 = 44;
-    /// `&&`
-    pub const ANDAND: u16 = 45;
-    /// `||`
-    pub const OROR: u16 = 46;
-    /// `==`
-    pub const EQ: u16 = 47;
-    /// `!=`
-    pub const NE: u16 = 48;
-    /// `<`
-    pub const LT: u16 = 49;
-    /// `>`
-    pub const GT: u16 = 50;
-    /// `<=`
-    pub const LE: u16 = 51;
-    /// `>=`
-    pub const GE: u16 = 52;
-    /// `<<`
-    pub const SHL: u16 = 53;
-    /// `>>`
-    pub const SHR: u16 = 54;
-    /// `=`
-    pub const ASSIGN: u16 = 55;
-    /// `+=`
-    pub const PLUSEQ: u16 = 56;
-    /// `-=`
-    pub const MINUSEQ: u16 = 57;
-    /// `*=`
-    pub const STAREQ: u16 = 58;
-    /// `/=`
-    pub const SLASHEQ: u16 = 59;
-    /// `%=`
-    pub const PERCENTEQ: u16 = 60;
-    /// `&=`
-    pub const ANDEQ: u16 = 61;
-    /// `|=`
-    pub const OREQ: u16 = 62;
-    /// `^=`
-    pub const XOREQ: u16 = 63;
-    /// `<<=`
-    pub const SHLEQ: u16 = 64;
-    /// `>>=`
-    pub const SHREQ: u16 = 65;
-    /// `.`
-    pub const DOT: u16 = 66;
-    /// `->`
-    pub const ARROW: u16 = 67;
-    /// `:`
-    pub const COLON: u16 = 68;
-    /// `;`
-    pub const SEMI: u16 = 69;
-    /// `,`
-    pub const COMMA: u16 = 70;
-    /// `?`
-    pub const QUESTION: u16 = 71;
-    /// `(`
-    pub const LPAREN: u16 = 72;
-    /// `)`
-    pub const RPAREN: u16 = 73;
-    /// `[`
-    pub const LBRACK: u16 = 74;
-    /// `]`
-    pub const RBRACK: u16 = 75;
+    /// An identifier or keyword (text-matched by the parser).
+    pub const NAME: u16 = 25;
+    /// A number literal (int/float, suffixes included).
+    pub const NUMBER: u16 = 26;
+    /// A string literal `"…"`.
+    pub const STRING: u16 = 27;
+    /// A char literal `'…'`.
+    pub const CHAR: u16 = 28;
     /// `{`
-    pub const LBRACE: u16 = 76;
+    pub const LBRACE: u16 = 29;
     /// `}`
-    pub const RBRACE: u16 = 77;
+    pub const RBRACE: u16 = 30;
+    /// `(`
+    pub const LPAREN: u16 = 31;
+    /// `)`
+    pub const RPAREN: u16 = 32;
+    /// `[`
+    pub const LBRACKET: u16 = 33;
+    /// `]`
+    pub const RBRACKET: u16 = 34;
+    /// `;`
+    pub const SEMI: u16 = 35;
+    /// `,`
+    pub const COMMA: u16 = 36;
+    /// `:`
+    pub const COLON: u16 = 37;
+    /// `.`
+    pub const DOT: u16 = 38;
+    /// `->`
+    pub const ARROW: u16 = 39;
+    /// `?`
+    pub const QUESTION: u16 = 40;
+    /// `+`
+    pub const PLUS: u16 = 41;
+    /// `-`
+    pub const MINUS: u16 = 42;
+    /// `*`
+    pub const STAR: u16 = 43;
+    /// `/`
+    pub const SLASH: u16 = 44;
+    /// `%`
+    pub const PERCENT: u16 = 45;
+    /// `!`
+    pub const BANG: u16 = 46;
+    /// `&`
+    pub const AMP: u16 = 47;
+    /// `|`
+    pub const PIPE: u16 = 48;
+    /// `^`
+    pub const CARET: u16 = 49;
+    /// `~`
+    pub const TILDE: u16 = 50;
+    /// `==`
+    pub const EQ: u16 = 51;
+    /// `!=`
+    pub const NEQ: u16 = 52;
+    /// `<=`
+    pub const LE: u16 = 53;
+    /// `>=`
+    pub const GE: u16 = 54;
+    /// `<`
+    pub const LT: u16 = 55;
+    /// `>`
+    pub const GT: u16 = 56;
+    /// `&&`
+    pub const AND: u16 = 57;
+    /// `||`
+    pub const OR: u16 = 58;
+    /// `<<`
+    pub const LSHIFT: u16 = 59;
+    /// `>>`
+    pub const RSHIFT: u16 = 60;
     /// `++`
-    pub const INCR: u16 = 78;
+    pub const INCREMENT: u16 = 61;
     /// `--`
-    pub const DECR: u16 = 79;
-    /// `int`
-    pub const KW_INT: u16 = 80;
-    /// `char`
-    pub const KW_CHAR: u16 = 81;
-    /// `float`
-    pub const KW_FLOAT: u16 = 82;
-    /// `double`
-    pub const KW_DOUBLE: u16 = 83;
-    /// `void`
-    pub const KW_VOID: u16 = 84;
-    /// `long`
-    pub const KW_LONG: u16 = 85;
-    /// `short`
-    pub const KW_SHORT: u16 = 86;
-    /// `signed`
-    pub const KW_SIGNED: u16 = 87;
-    /// `unsigned`
-    pub const KW_UNSIGNED: u16 = 88;
-    /// `_Bool`
-    pub const KW_BOOL: u16 = 89;
-    /// `const`
-    pub const KW_CONST: u16 = 90;
-    /// `volatile`
-    pub const KW_VOLATILE: u16 = 91;
-    /// `struct`
-    pub const KW_STRUCT: u16 = 92;
-    /// `union`
-    pub const KW_UNION: u16 = 93;
-    /// `enum`
-    pub const KW_ENUM: u16 = 94;
-    /// `if`
-    pub const KW_IF: u16 = 95;
-    /// `else`
-    pub const KW_ELSE: u16 = 96;
-    /// `while`
-    pub const KW_WHILE: u16 = 97;
-    /// `do`
-    pub const KW_DO: u16 = 98;
-    /// `for`
-    pub const KW_FOR: u16 = 99;
-    /// `return`
-    pub const KW_RETURN: u16 = 100;
-    /// `break`
-    pub const KW_BREAK: u16 = 101;
-    /// `continue`
-    pub const KW_CONTINUE: u16 = 102;
-    /// `sizeof`
-    pub const KW_SIZEOF: u16 = 103;
-    /// `typedef`
-    pub const KW_TYPEDEF: u16 = 104;
-    /// `static`
-    pub const KW_STATIC: u16 = 105;
-    /// `extern`
-    pub const KW_EXTERN: u16 = 106;
-    /// `inline`
-    pub const KW_INLINE: u16 = 107;
-    /// Whitespace trivia (never a token event, ADR-008).
-    pub const WHITESPACE: u16 = 108;
-    /// `//` and `/* */` comment trivia.
-    pub const COMMENT: u16 = 109;
+    pub const DECREMENT: u16 = 62;
+    /// `=`
+    pub const ASSIGN: u16 = 63;
+    /// `+=`
+    pub const PLUSEQ: u16 = 64;
+    /// `-=`
+    pub const MINUSEQ: u16 = 65;
+    /// `*=`
+    pub const STAREQ: u16 = 66;
+    /// `/=`
+    pub const SLASHEQ: u16 = 67;
+    /// `%=`
+    pub const PERCENTEQ: u16 = 68;
+    /// `&=`
+    pub const AMP_EQ: u16 = 69;
+    /// `|=`
+    pub const PIPE_EQ: u16 = 70;
+    /// `^=`
+    pub const CARET_EQ: u16 = 71;
+    /// `<<=`
+    pub const LSHIFT_EQ: u16 = 72;
+    /// `>>=`
+    pub const RSHIFT_EQ: u16 = 73;
+    /// `…` (ellipsis)
+    pub const ELLIPSIS: u16 = 74;
+    /// `#`
+    pub const HASH: u16 = 75;
+    /// Whitespace trivia.
+    pub const WHITESPACE: u16 = 76;
+    /// `// …` line-comment trivia.
+    pub const COMMENT: u16 = 77;
+    /// `/* … */` block-comment trivia.
+    pub const BLOCK_COMMENT: u16 = 78;
 }
 
-/// Implicit document-root kind — pack-local sentinel below the
-/// runtime-core sentinels.
-pub const ROOT_KIND: u16 = u16::MAX - 9;
+/// Implicit translation-unit root kind — pack-local sentinel.
+pub const ROOT_KIND: u16 = u16::MAX - 5;
 
-/// Parse C source into a green tree (the full integration).
+/// Parse C11-subset source into a green tree (the full integration:
+/// `parse_events` → `process` → `drive_sink` → `TreeBuilder`).
 ///
 /// # Errors
-/// Structural errors propagate as `Err`; syntax errors are recovered.
+/// Structural errors (a malformed event stream) propagate as `Err`;
+/// malformed *C* is recovered, not an error.
 pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
     reference::parse(source)
 }
