@@ -57,6 +57,32 @@ const CORPUS: &[(&str, usize)] = &[
         0,
     ),
     ("CREATE TABLE t (a VARCHAR(10), b DECIMAL(8, 2));", 0),
+    // -- feature-completeness pass (compound selects, DDL, pragma, txn) -------
+    (
+        "SELECT a FROM t UNION SELECT b FROM u ORDER BY 1 DESC NULLS LAST LIMIT 10 OFFSET 5;",
+        0,
+    ),
+    (
+        "SELECT a FROM t UNION ALL SELECT b FROM u EXCEPT SELECT c FROM v;",
+        0,
+    ),
+    (
+        "SELECT a FROM t WHERE EXISTS (SELECT 1) AND NOT EXISTS (SELECT 2 FROM u);",
+        0,
+    ),
+    ("ALTER TABLE users ADD COLUMN age INTEGER DEFAULT 0;", 0),
+    ("ALTER TABLE t RENAME TO t2;", 0),
+    ("DROP TABLE IF EXISTS temp;", 0),
+    ("DROP INDEX i;", 0),
+    ("CREATE INDEX idx_name ON users (name);", 0),
+    ("CREATE UNIQUE INDEX iu ON t (a, b);", 0),
+    ("CREATE VIEW v AS SELECT a FROM t;", 0),
+    ("PRAGMA foreign_keys = ON;", 0),
+    ("PRAGMA cache_size;", 0),
+    ("BEGIN;", 0),
+    ("BEGIN TRANSACTION;", 0),
+    ("COMMIT;", 0),
+    ("ROLLBACK;", 0),
     // -- misc ------------------------------------------------------------------
     ("-- only a comment", 0),
     ("/* block */", 0),
@@ -204,6 +230,82 @@ fn tree_has_root_and_statements() {
     assert_eq!(tree.kind, ROOT_KIND);
     let stmts = count_node_kind(&tree, kinds::STATEMENT);
     assert_eq!(stmts, 2);
+}
+
+/// Compound selects: `UNION [ALL]` / `EXCEPT` / `INTERSECT` chain cores;
+/// `ORDER BY`/`LIMIT`/`OFFSET` bind after the compound chain.
+#[test]
+fn compound_selects() {
+    let source = "SELECT a FROM t UNION ALL SELECT b FROM u \
+                  EXCEPT SELECT c FROM v INTERSECT SELECT d FROM w;";
+    let (events, _, errors) = parse_events(source);
+    assert_eq!(errors, 0, "four cores, three compound operators");
+    assert_eq!(count_kind(&events, kinds::SELECT), 4);
+    assert_eq!(count_kind(&events, kinds::COMPOUND), 3);
+
+    let ordered = "SELECT a FROM t UNION SELECT b FROM u ORDER BY 1 DESC LIMIT 10 OFFSET 5;";
+    let (events, _, errors) = parse_events(ordered);
+    assert_eq!(errors, 0, "ORDER/LIMIT/OFFSET follow the compound");
+    assert_eq!(count_kind(&events, kinds::SELECT), 2);
+    assert_eq!(count_kind(&events, kinds::COMPOUND), 1);
+    assert_eq!(count_kind(&events, kinds::CLAUSE), 3, "order+limit+offset");
+}
+
+/// `EXISTS (…)` / `NOT EXISTS (…)` prefix operators.
+#[test]
+fn exists_operator() {
+    let source = "SELECT a FROM t WHERE EXISTS (SELECT 1) \
+                  AND NOT EXISTS (SELECT 1 FROM u WHERE u.id = t.id);";
+    let (events, _, errors) = parse_events(source);
+    assert_eq!(errors, 0, "EXISTS binds to its parenthesised subquery");
+    assert_eq!(count_kind(&events, kinds::SUBQUERY), 2);
+    // EXISTS + (NOT wrapping EXISTS) → three UNARY nodes.
+    assert_eq!(count_kind(&events, kinds::UNARY), 3, "EXISTS + NOT EXISTS");
+}
+
+/// DDL: `ALTER TABLE`, `DROP … [IF EXISTS]`, `CREATE [UNIQUE] INDEX`,
+/// `CREATE VIEW … AS SELECT …`.
+#[test]
+fn ddl_statements() {
+    let sources = [
+        (
+            "ALTER TABLE users ADD COLUMN age INTEGER DEFAULT 0;",
+            kinds::ALTER,
+        ),
+        ("ALTER TABLE t RENAME TO t2;", kinds::ALTER),
+        ("DROP TABLE IF EXISTS temp;", kinds::DROP),
+        ("DROP INDEX i;", kinds::DROP),
+        (
+            "CREATE INDEX idx_name ON users (name);",
+            kinds::CREATE_INDEX,
+        ),
+        ("CREATE UNIQUE INDEX iu ON t (a, b);", kinds::CREATE_INDEX),
+        ("CREATE VIEW v AS SELECT a FROM t;", kinds::CREATE_VIEW),
+    ];
+    for (source, kind) in sources {
+        let (events, _, errors) = parse_events(source);
+        assert_eq!(errors, 0, "{source:?}");
+        assert_eq!(count_kind(&events, kind), 1, "{source:?}");
+        assert_eq!(count_kind(&events, kinds::STATEMENT), 1, "{source:?}");
+    }
+}
+
+/// `PRAGMA` and transactions (`BEGIN`/`COMMIT`/`ROLLBACK`).
+#[test]
+fn pragma_and_transactions() {
+    let sources = [
+        "PRAGMA foreign_keys = ON;",
+        "PRAGMA cache_size;",
+        "BEGIN;",
+        "BEGIN TRANSACTION;",
+        "COMMIT;",
+        "ROLLBACK;",
+    ];
+    for source in sources {
+        let (events, _, errors) = parse_events(source);
+        assert_eq!(errors, 0, "{source:?}");
+        assert_eq!(count_kind(&events, kinds::STATEMENT), 1, "{source:?}");
+    }
 }
 
 fn count_kind(events: &[Event], kind: u16) -> usize {
