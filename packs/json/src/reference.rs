@@ -44,7 +44,7 @@ pub mod token_kinds {
     /// `,` — list separator.
     pub const COMMA: u16 = 13;
     /// Whitespace trivia: never a token event (ADR-008) — flows through
-    /// [`TriviaRecord`]s at tree-build time.
+    /// [`runtime_core::sink::TriviaRecord`]s at tree-build time.
     pub const WHITESPACE: u16 = 14;
 }
 
@@ -60,6 +60,15 @@ pub const ROOT_KIND: u16 = u16::MAX - 3;
 /// Diagnostic side-table index meaning "syntax error" — the only message
 /// the v0 reference parser emits (resolved by [`error_message`]).
 pub const DIAG_SYNTAX: u32 = 0;
+
+/// Maximum container nesting depth the recursive-descent parser will
+/// follow. Deeper containers fail cleanly: the offending container opener
+/// rides an ERROR region (lossless), the parse resynchronizes, and the
+/// process stays alive. 512 keeps the worst-case `object → pair → value →
+/// object` frame chain (~3 frames per level, debug builds included) far
+/// below the 2 MiB spawn-thread stack — deep-JSON bombs (`[[[[…`) are a
+/// classic stack-smash `DoS` and MUST NOT reach the stack.
+pub const MAX_DEPTH: usize = 512;
 
 /// Resolve a diagnostic side-table index to its message text.
 #[must_use]
@@ -81,7 +90,7 @@ pub fn error_message(diag: u32) -> &'static str {
 /// - **Ranges**: one `(kind, byte range)` pair per token event, parallel in
 ///   DFS order (directly consumable by [`runtime_core::sink::drive_sink`]).
 ///   Ranges are CLEAN (trivia excluded) and may have gaps — the trivia
-///   between them is exactly what [`Parser::trivia`] covers, so the union
+///   between them is exactly what the parser's trivia union covers, so the union
 ///   of ranges + trivia records partitions `[0, len)`.
 /// - **Errors**: one [`Event::Error`] per syntax error; `diag` indexes the
 ///   side table ([`DIAG_SYNTAX`] = "syntax error" via [`error_message`]).
@@ -162,18 +171,28 @@ struct Parser<'s> {
     /// `(range, trailing)` trivia records covering every gap.
     trivia: Vec<(Range<u32>, bool)>,
     errors: usize,
+    /// Current container nesting depth (objects + arrays), bounded by
+    /// [`MAX_DEPTH`].
+    depth: usize,
 }
 
 impl<'s> Parser<'s> {
     fn run(source: &'s str) -> Self {
+        // Heuristic reserve from the corpus profile: a JSON doc averages
+        // ~1 token per 4 bytes and ~1.5 events per token. Capped at 2048
+        // tokens: larger guesses (>= 128 KiB buffers) cross the allocator's
+        // mmap threshold and every parse then pays fresh page faults,
+        // which measured SLOWER than growth-by-realloc for big documents.
+        let approx_tokens = (source.len() / 4).min(2048);
         Self {
             bytes: source.as_bytes(),
             pos: 0,
             last_end: 0,
-            events: Vec::new(),
-            tokens: Vec::new(),
-            trivia: Vec::new(),
+            events: Vec::with_capacity(approx_tokens * 2),
+            tokens: Vec::with_capacity(approx_tokens),
+            trivia: Vec::with_capacity(source.len().min(8192) / 16),
             errors: 0,
+            depth: 0,
         }
     }
 
@@ -343,6 +362,15 @@ impl<'s> Parser<'s> {
 
     /// Parse a `{ ... }` object.
     fn parse_object(&mut self) {
+        if self.depth >= MAX_DEPTH {
+            // Nesting bomb: the opener rides an error region (fail_skip
+            // always consumes it), the enclosing loop resynchronizes on
+            // the matching closers — no recursion, no stack smash.
+            let start = self.pos;
+            self.fail_skip(start, true);
+            return;
+        }
+        self.depth += 1;
         self.events.push(Event::Start {
             kind: kinds::OBJECT,
             forward_parent: None,
@@ -372,10 +400,17 @@ impl<'s> Parser<'s> {
             }
         }
         self.events.push(Event::Finish);
+        self.depth -= 1;
     }
 
     /// Parse a `[ ... ]` array.
     fn parse_array(&mut self) {
+        if self.depth >= MAX_DEPTH {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            return;
+        }
+        self.depth += 1;
         self.events.push(Event::Start {
             kind: kinds::ARRAY,
             forward_parent: None,
@@ -399,6 +434,7 @@ impl<'s> Parser<'s> {
             }
         }
         self.events.push(Event::Finish);
+        self.depth -= 1;
     }
 
     /// Top level: values separated by whitespace until EOF; non-value
@@ -413,11 +449,18 @@ impl<'s> Parser<'s> {
             match self.peek() {
                 Some(b'{') => self.parse_object(),
                 Some(b'[') => self.parse_array(),
-                Some(_) if self.scan_value_token().is_some() => self.parse_value(),
-                _ => {
-                    let start = self.pos;
-                    self.fail_skip(start, true);
+                Some(_) => {
+                    // Lex the value once here (the old shape tested with
+                    // `scan_value_token` and then re-lexed inside
+                    // `parse_value` — every scalar document paid twice).
+                    if let Some((kind, n)) = self.scan_value_token() {
+                        self.bump(kind, n);
+                    } else {
+                        let start = self.pos;
+                        self.fail_skip(start, true);
+                    }
                 }
+                None => break, // handled by the peek above; defensive
             }
         }
     }
