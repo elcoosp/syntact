@@ -2,7 +2,7 @@
 
 - **Epic:** Phase 5 (epic 094)
 - **Crates:** crates/playground-server
-- **Status:** open
+- **Status:** done
 
 ## Work
 
