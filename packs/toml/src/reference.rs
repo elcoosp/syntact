@@ -20,6 +20,14 @@ use crate::token_kinds as tk;
 /// the v0 reference parser emits (resolved by [`error_message`]).
 pub const DIAG_SYNTAX: u32 = 0;
 
+/// Maximum container nesting depth the recursive-descent parser will
+/// follow (arrays + inline tables). Deeper containers fail cleanly: the
+/// opener rides an ERROR region (lossless), the parse resynchronizes and
+/// the process stays alive. Nesting bombs (`a = [[[[…`) are a classic
+/// stack-smash `DoS` and MUST NOT reach the stack; 512 keeps the worst-case
+/// frame chain far below the 2 MiB spawn-thread stack.
+pub const MAX_DEPTH: usize = 512;
+
 /// Resolve a diagnostic side-table index to its message text.
 #[must_use]
 pub fn error_message(diag: u32) -> &'static str {
@@ -103,6 +111,8 @@ struct Parser<'s> {
     /// `(range, trivia kind, trailing)` covering every gap.
     trivia: Vec<(Range<u32>, u16, bool)>,
     errors: usize,
+    /// Current container nesting depth, bounded by [`MAX_DEPTH`].
+    depth: usize,
 }
 
 impl<'s> Parser<'s> {
@@ -115,6 +125,7 @@ impl<'s> Parser<'s> {
             tokens: Vec::new(),
             trivia: Vec::new(),
             errors: 0,
+            depth: 0,
         }
     }
 
@@ -604,6 +615,12 @@ impl<'s> Parser<'s> {
     /// `[ value, … ]` — newlines and comments are trivia, trailing comma
     /// tolerated (recovery keeps parsing after the closing bracket).
     fn parse_array(&mut self) {
+        if self.depth >= MAX_DEPTH {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            return;
+        }
+        self.depth += 1;
         self.events.push(Event::Start {
             kind: kinds::ARRAY,
             forward_parent: None,
@@ -654,10 +671,17 @@ impl<'s> Parser<'s> {
             }
         }
         self.events.push(Event::Finish);
+        self.depth -= 1;
     }
 
     /// `{ k = v, … }` — single line; trailing comma tolerated.
     fn parse_inline_table(&mut self) {
+        if self.depth >= MAX_DEPTH {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            return;
+        }
+        self.depth += 1;
         self.events.push(Event::Start {
             kind: kinds::INLINE_TABLE,
             forward_parent: None,
@@ -721,5 +745,6 @@ impl<'s> Parser<'s> {
             }
         }
         self.events.push(Event::Finish);
+        self.depth -= 1;
     }
 }
