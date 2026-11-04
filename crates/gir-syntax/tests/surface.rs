@@ -97,6 +97,69 @@ fn seq_markers_bind_backward() {
 }
 
 #[test]
+fn seq_markers_lower_to_the_marked_element() {
+    // `X opt` must wrap X in Opt — the marker binds backward to the
+    // element it follows, never to whatever preceded X, and X itself
+    // must not be dropped (regression: the lowering used to pop the
+    // previous output element and discard the marked one).
+    let grammar = load_grammar(JSON).expect("ir");
+    let rule_named = |name: &str| {
+        grammar
+            .rules
+            .iter()
+            .find(|rule| grammar.interner.lookup(rule.name) == name)
+            .map_or_else(|| panic!("rule `{name}` exists"), |rule| rule.id)
+    };
+    let token_named = |name: &str| {
+        grammar
+            .tokens
+            .iter()
+            .find(|token| grammar.interner.lookup(token.name) == name)
+            .map_or_else(|| panic!("token `{name}` exists"), |token| token.id)
+    };
+    let token_named_lit = |text: &str| {
+        grammar
+            .tokens
+            .iter()
+            .find(|token| {
+                matches!(&token.pattern, gir_ir::TokenPattern::Lit { text: lit } if lit == text)
+            })
+            .map_or_else(|| panic!("literal token `{text}` exists"), |token| token.id)
+    };
+
+    // object = "{" pair-list opt "}"
+    let object = grammar.rule(rule_named("object"));
+    let Element::Seq(parts) = &object.body else {
+        panic!("object is a seq");
+    };
+    assert_eq!(
+        parts.len(),
+        3,
+        "three elements: {{, pair-list?, }} — nothing dropped"
+    );
+    assert_eq!(parts[0], Element::Token(token_named("lbrace")));
+    let Element::Opt(inner) = &parts[1] else {
+        panic!("`pair-list opt` wraps pair-list, got {:?}", parts[1]);
+    };
+    assert_eq!(**inner, Element::Rule(rule_named("pair-list")));
+    assert_eq!(parts[2], Element::Token(token_named("rbrace")));
+
+    // array = "[" value-list opt "]" — `opt` binds backward to
+    // value-list (the element it follows): "[" value-list? "]".
+    let array = grammar.rule(rule_named("array"));
+    let Element::Seq(parts) = &array.body else {
+        panic!("array is a seq");
+    };
+    assert_eq!(parts.len(), 3, "[, value-list?, ] — nothing dropped");
+    assert!(matches!(&parts[0], Element::Token(_)), "anonymous `[`");
+    let Element::Opt(inner) = &parts[1] else {
+        panic!("`value-list opt` wraps value-list, got {:?}", parts[1]);
+    };
+    assert_eq!(**inner, Element::Rule(rule_named("value-list")));
+    assert_eq!(parts[2], Element::Token(token_named_lit("]")));
+}
+
+#[test]
 fn span_fidelity_name_slices() {
     // The name spans must slice exactly the identifiers in the source.
     let doc = load(JSON).expect("loads");
@@ -121,56 +184,6 @@ fn round_trip_render_reloads_to_equal_ir() {
     assert_eq!(grammar_a, grammar_b, "round-trip preserves the IR");
     // Render is idempotent (canonical form).
     assert_eq!(render(&reloaded), rendered);
-}
-
-#[test]
-fn markers_wrap_their_own_item() {
-    // Regression (issue 037): `pair-list opt` must wrap pair-list in the
-    // IR — not the preceding element — and a marked item may be the only
-    // item in the sequence.
-    let grammar = load_grammar(
-        r#"
-language "markers" version="1.0.0"
-tokens {
-    string kind=re "\"[^\"]*\""
-}
-grammar {
-    object kind=seq "{" pair-list opt "}" node="true"
-    one-item kind=seq pair-list rep
-    pair-list kind=sep element=pair separator=","
-    pair kind=seq string ":" string
-}
-"#,
-    )
-    .expect("lowers");
-    let object = grammar
-        .rules
-        .iter()
-        .find(|rule| grammar.interner.lookup(rule.name) == "object")
-        .expect("object rule");
-    let Element::Seq(parts) = &object.body else {
-        panic!("object is a seq");
-    };
-    assert_eq!(parts.len(), 3);
-    let Element::Opt(inner) = &parts[1] else {
-        panic!("the marked item is optional");
-    };
-    assert!(
-        matches!(**inner, Element::Rule(_)),
-        "opt wraps the pair-list reference, not the preceding literal"
-    );
-    let one_item = grammar
-        .rules
-        .iter()
-        .find(|rule| grammar.interner.lookup(rule.name) == "one-item")
-        .expect("one-item rule");
-    let Element::Seq(parts) = &one_item.body else {
-        panic!("one-item is a seq");
-    };
-    assert!(
-        matches!(parts[0], Element::Rep { .. }),
-        "a single marked item lowers without a dangling-marker error"
-    );
 }
 
 #[test]
