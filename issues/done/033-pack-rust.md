@@ -2,7 +2,7 @@
 
 - **Epic:** Phase 4 (epic 093)
 - **Crates:** packs/rust
-- **Status:** open
+- **Status:** done
 
 ## Work
 
