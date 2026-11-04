@@ -57,6 +57,20 @@ const CORPUS: &[(&str, usize)] = &[
     ("int f(void) { x <<= 2; y >>= 1; }", 0),
     ("int f(void) { a = b = c = 0; }", 0),
     ("int f(void) { v[i + 1] = *p++; }", 0),
+    // -- feature-completeness pass (switch/labels/bitfields/typedef-fn-ptr/
+    //    designated inits/string prefixes) ---------------------------------
+    (
+        "int f(void) { switch (x) { case 1: y(); break; default: z(); } return 0; }",
+        0,
+    ),
+    ("int f(void) { goto done; done: return 0; }", 0),
+    ("struct Bits { int lo : 3; unsigned hi : 5; };", 0),
+    ("typedef int (*cb)(void *, size_t);", 0),
+    ("int m[3] = {[1] = 2, [0] = 1};", 0),
+    ("struct P p = {.x = 1, .y = 2};", 0),
+    ("char *s = u8\"hi\";", 0),
+    ("char *w = L\"wide\";", 0),
+    ("size_t n = sizeof(struct Node);", 0),
     // -- preprocessor -----------------------------------------------------
     ("#include <stdio.h>\nint main(void) { return 0; }", 0),
     (
@@ -195,6 +209,73 @@ fn tree_has_root_and_functions() {
     assert_eq!(tree.kind, ROOT_KIND);
     let fns = count_node_kind(&tree, kinds::FUNCTION);
     assert_eq!(fns, 2);
+}
+
+/// Switch bodies with `case`/`default` labels and labeled statements
+/// + `goto` (feature-completeness pass).
+#[test]
+fn switch_case_and_labels() {
+    let source = "int f(void) { switch (x) { case 1: y(); break; \
+                  case 2 + 3: break; default: z(); } return 0; }";
+    let (events, _, errors) = parse_events(source);
+    assert_eq!(errors, 0, "{source:?}");
+    assert_eq!(count_kind(&events, kinds::SWITCH), 1);
+    assert_eq!(
+        count_kind(&events, kinds::CASE_LABEL),
+        3,
+        "2 case + default"
+    );
+
+    let goto_src = "int f(void) { goto done; done: return 0; }";
+    let (events, _, errors) = parse_events(goto_src);
+    assert_eq!(errors, 0, "{goto_src:?}");
+    assert_eq!(count_kind(&events, kinds::GOTO), 1);
+    assert_eq!(count_kind(&events, kinds::CASE_LABEL), 1, "label `done:`");
+}
+
+/// Bitfields ride the member declarator: `int lo : 3;`.
+#[test]
+fn bitfield_members() {
+    let source = "struct Bits { int lo : 3; unsigned hi : 5; };";
+    let (events, _, errors) = parse_events(source);
+    assert_eq!(errors, 0, "{source:?}");
+    assert_eq!(count_kind(&events, kinds::MEMBER), 2);
+}
+
+/// `typedef` accepts the grouped function-pointer declarator.
+#[test]
+fn typedef_function_pointer() {
+    let source = "typedef int (*cb)(void *, size_t);";
+    let (events, _, errors) = parse_events(source);
+    assert_eq!(errors, 0, "{source:?}");
+    assert_eq!(count_kind(&events, kinds::TYPEDEF), 1);
+}
+
+/// Designated initializers: `[index] = value` and `.field = value`.
+#[test]
+fn designated_initializers() {
+    let sources = [
+        "int m[3] = {[1] = 2, [0] = 1};",
+        "struct P p = {.x = 1, .y = 2};",
+    ];
+    for source in sources {
+        let (_, _, errors) = parse_events(source);
+        assert_eq!(errors, 0, "{source:?}");
+    }
+}
+
+/// String-literal prefixes (`u8"…"`, `L'…'`) lex with the literal.
+#[test]
+fn string_prefixes() {
+    let sources = [
+        "char *s = u8\"hi\";",
+        "char *w = L\"wide\";",
+        "int f(void) { return '\\x41'; }",
+    ];
+    for source in sources {
+        let (_, _, errors) = parse_events(source);
+        assert_eq!(errors, 0, "{source:?}");
+    }
 }
 
 fn count_kind(events: &[Event], kind: u16) -> usize {
