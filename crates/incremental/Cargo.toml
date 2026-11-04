@@ -12,11 +12,8 @@ authors.workspace = true
 runtime-core.workspace = true
 
 [dev-dependencies]
-harness.workspace = true
 packs-json.workspace = true
 packs-toml.workspace = true
-lexgen.workspace = true
-gir-ir.workspace = true
 pretty_assertions.workspace = true
 
 [lints]
