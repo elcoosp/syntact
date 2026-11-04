@@ -11,16 +11,23 @@
 //!
 //! - **Statements**: `import` (default / named / namespace / side-
 //!   effect), `export` (declarations, default, named lists, `* from`),
-//!   `interface`, `type`, `enum`/`const enum`, `class`, `function`,
-//!   arrow functions (parenthesized params detected by a bounded
-//!   pre-scan, single-parameter arrows without parens), `const`/`let`/
-//!   `var` (with destructuring patterns), `if`/`else`, `while`,
-//!   `for`/`for…in`/`for…of`, `return`, `break`, `continue`, `throw`,
-//!   expression statements.
+//!   `interface`, `type`, `enum`/`const enum`, `class`, `function`/
+//!   `function*` generators, arrow functions (parenthesized params
+//!   detected by a bounded pre-scan, single-parameter arrows without
+//!   parens), `const`/`let`/`var` (with destructuring patterns),
+//!   `if`/`else`, `while`, `do…while`, `for`/`for…in`/`for…of`,
+//!   `try`/`catch [param]`/`finally`, `switch` with `case`/`default`
+//!   labels, `name:` labeled statements (and labeled
+//!   `break`/`continue`), `return`, `break`, `continue`, `throw`,
+//!   `yield [expr]`, expression statements.
 //! - **Not in the subset** (each parses as an error and recovers):
-//!   `try`/`catch`/`finally`, `switch`, `do…while`, labels, generators
-//!   (`function*`), `await`/`yield`, decorators, `?.`/`??`, `declare`,
-//!   namespaces, abstract members beyond the modifier.
+//!   decorators, `declare`, namespaces, JSX elements, abstract
+//!   member bodies (signatures end at `;`).
+//! - **Expressions**: `?.` optional chaining (`?.x`, `?.[i]`, `?.(args)`)
+//!   and `??` nullish coalescing ride the Pratt table; private fields
+//!   `#name` lex as one NAME token (declaration and `this.#name`
+//!   access); constructor parameter properties
+//!   (`constructor(public readonly x: T)`).
 //! - **ASI**: statements end at a newline, `}`, or EOF; `;` is optional
 //!   and consumed when present. Restricted productions apply to
 //!   `return`/`throw` (no value across a newline). Infix operators
@@ -32,8 +39,10 @@
 //!   the test suite pins the two-token shape.
 //! - **Types**: unions (`A | B`), generics (`Name<Args>`), arrays
 //!   (`T[]`), tuples (`[A, B]`), parenthesized groups, and literal /
-//!   keyword types. Function types, conditional types, mapped types,
-//!   and template-literal types are out (each recovers as an error).
+//!   keyword types. Function types `(a: X, ...rest: Y) => Ret` (with
+//!   optional/default/rest params, detected by a bounded pre-scan).
+//!   Conditional types, mapped types, and template-literal types are
+//!   out (each recovers as an error).
 //! - **Template literals**: TEMPLATE node with start/middle chunks and
 //!   `${expr}` interpolations parsed by the full Pratt grammar.
 //!
@@ -137,6 +146,18 @@ pub mod kinds {
     pub const MEMBER: u16 = 39;
     /// One generic type parameter (`<T extends U = V>`).
     pub const TYPE_PARAM: u16 = 40;
+    /// A function type `(params) => ret`.
+    pub const TYPE_FN: u16 = 105;
+    /// `switch (expr) { … }`.
+    pub const SWITCH: u16 = 106;
+    /// A label: `case e:`, `default:`, or `name:`.
+    pub const CASE_LABEL: u16 = 107;
+    /// `yield [expr]` (generator yield).
+    pub const YIELD: u16 = 108;
+    /// `try { … } catch (e) { … } finally { … }`.
+    pub const TRY: u16 = 109;
+    /// `do stmt while (cond)`.
+    pub const DO_WHILE: u16 = 110;
 }
 
 /// Token kinds — dense continuation of [`kinds`].
@@ -266,6 +287,10 @@ pub mod token_kinds {
     pub const WHITESPACE: u16 = 101;
     /// `// …` / `/* … */` (incl. `/** doc */`) comment trivia.
     pub const COMMENT: u16 = 102;
+    /// `?.` optional chaining.
+    pub const QUESTION_DOT: u16 = 103;
+    /// `??` nullish coalescing.
+    pub const QUESTION_QUESTION: u16 = 104;
 }
 
 /// Implicit module-root kind for the green tree — pack-local sentinel,
