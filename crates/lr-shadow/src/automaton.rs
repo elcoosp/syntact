@@ -100,6 +100,10 @@ pub struct Automaton {
 impl Automaton {
     /// Build the automaton: lower the grammar, run the kernel worklist,
     /// resolve conflicts, derive expected sets.
+    ///
+    /// # Panics
+    /// When the grammar exceeds `u32::MAX` rules or productions
+    /// (index-space exhaustion).
     #[must_use]
     pub fn build(grammar: &Grammar) -> Self {
         let lowered = crate::lower::lower(grammar);
