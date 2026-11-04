@@ -21,6 +21,15 @@ use crate::token_kinds as tk;
 /// the v0 reference parser emits (resolved by [`error_message`]).
 pub const DIAG_SYNTAX: u32 = 0;
 
+/// Maximum nesting depth the recursive-descent parser will follow
+/// (paren/list cycles `parse_expr_bp → atom → parse_paren/parse_list →
+/// parse_expr_bp`, suites cycle `parse_suite → statement → parse_suite`
+/// through ever-deeper indentation). Deeper nesting fails cleanly: the
+/// opener rides an ERROR region (lossless), the parse resynchronizes and
+/// the process stays alive. Nesting bombs (`((((…`, `[[[[…`, indent
+/// pyramids) are a classic stack-smash `DoS` and MUST NOT reach the stack.
+pub const MAX_DEPTH: usize = 512;
+
 /// Resolve a diagnostic side-table index to its message text.
 #[must_use]
 pub fn error_message(diag: u32) -> &'static str {
@@ -105,6 +114,9 @@ struct Parser<'s> {
     /// `(range, trivia kind, trailing)` covering every gap.
     trivia: Vec<(Range<u32>, u16, bool)>,
     errors: usize,
+    /// Current expr/container/suite nesting depth, bounded by
+    /// [`MAX_DEPTH`].
+    nest_depth: usize,
     /// CPython-style indent column stack (`0` is the bottom sentinel).
     indents: Vec<u32>,
     /// Bracket nesting depth: > 0 turns newlines into trivia.
@@ -123,6 +135,7 @@ impl<'s> Parser<'s> {
             tokens: Vec::new(),
             trivia: Vec::new(),
             errors: 0,
+            nest_depth: 0,
             indents: vec![0],
             depth: 0,
             last_token: None,
@@ -253,12 +266,11 @@ impl<'s> Parser<'s> {
             }
             self.pos += 1;
         }
-        if consume_stray && self.pos == start {
-            if let Some(b) = self.peek() {
-                if !matches!(b, b'\n' | b')' | b']' | b'}' | b'#') {
-                    self.pos += 1; // the stray char rides the error region
-                }
-            }
+        if consume_stray && self.pos == start && self.peek().is_some() {
+            self.pos += 1; // the stray char rides the error region —
+            // progress is unconditional: exempting the sync byte here
+            // let a caller retry fail_skip at the same cursor forever,
+            // growing the event stream without bound (OOM kill).
         }
         if self.pos > start {
             self.events.push(Event::Token {
@@ -673,6 +685,21 @@ impl<'s> Parser<'s> {
     /// is what makes batched `DEDENT`s close exactly the right number
     /// of nested suites.
     fn parse_suite(&mut self) {
+        if self.nest_depth >= MAX_DEPTH {
+            // Indentation pyramid: no opener to consume — emit a
+            // zero-width error and return without recursing (the outer
+            // statement loop keeps making byte progress).
+            self.error_zero_width();
+            return;
+        }
+        self.nest_depth += 1;
+        self.parse_suite_guarded();
+        self.nest_depth -= 1;
+    }
+
+    /// The guarded body of [`Self::parse_suite`] (depth accounting lives
+    /// in the wrapper).
+    fn parse_suite_guarded(&mut self) {
         self.skip_trivia();
         if self.peek() == Some(b'\n') {
             self.bump_newline();
@@ -1437,6 +1464,19 @@ impl<'s> Parser<'s> {
     /// binding power, then the ternary conditional at `min_bp == 0`.
     /// Nodes wrap retroactively via [`Self::wrap_node`] at `mark`.
     fn parse_expr_bp(&mut self, min_bp: u8) {
+        if self.nest_depth >= MAX_DEPTH {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            return;
+        }
+        self.nest_depth += 1;
+        self.parse_expr_bp_guarded(min_bp);
+        self.nest_depth -= 1;
+    }
+
+    /// The guarded body of [`Self::parse_expr_bp`] (depth accounting
+    /// lives in the wrapper).
+    fn parse_expr_bp_guarded(&mut self, min_bp: u8) {
         let mark = self.events.len();
         if let Some((kind, n, rbp)) = self.peek_unary() {
             self.bump(kind, n);
@@ -1949,6 +1989,19 @@ impl<'s> Parser<'s> {
 
     /// `(` … `)`: unit, tuple, parenthesized expression, or generator.
     fn parse_paren(&mut self) {
+        if self.nest_depth >= MAX_DEPTH {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            return;
+        }
+        self.nest_depth += 1;
+        self.parse_paren_guarded();
+        self.nest_depth -= 1;
+    }
+
+    /// The guarded body of [`Self::parse_paren`] (depth accounting lives
+    /// in the wrapper).
+    fn parse_paren_guarded(&mut self) {
         let mark = self.events.len();
         self.bump_bracket(tk::LPAREN, 1, true);
         self.skip_trivia();
@@ -1984,6 +2037,19 @@ impl<'s> Parser<'s> {
 
     /// `[` … `]`: list display or list comprehension.
     fn parse_list(&mut self) {
+        if self.nest_depth >= MAX_DEPTH {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            return;
+        }
+        self.nest_depth += 1;
+        self.parse_list_guarded();
+        self.nest_depth -= 1;
+    }
+
+    /// The guarded body of [`Self::parse_list`] (depth accounting lives
+    /// in the wrapper).
+    fn parse_list_guarded(&mut self) {
         let mark = self.events.len();
         self.bump_bracket(tk::LBRACKET, 1, true);
         self.skip_trivia();
