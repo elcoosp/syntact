@@ -20,6 +20,13 @@ use crate::token_kinds as tk;
 /// Diagnostic side-table index meaning "syntax error".
 pub const DIAG_SYNTAX: u32 = 0;
 
+/// Maximum block nesting depth the recursive-descent parser will follow
+/// (`parse_stmt → parse_block → parse_stmt` cycles on `{`). Deeper blocks
+/// fail cleanly: the opener rides an ERROR region (lossless), the parse
+/// resynchronizes and the process stays alive. Nesting bombs (`{{{{…`)
+/// are a classic stack-smash `DoS` and MUST NOT reach the stack.
+pub const MAX_DEPTH: usize = 512;
+
 /// Resolve a diagnostic side-table index to its message text.
 #[must_use]
 pub fn error_message(diag: u32) -> &'static str {
@@ -95,6 +102,8 @@ struct Parser<'s> {
     tokens: Vec<(u16, Range<u32>)>,
     trivia: Vec<(Range<u32>, u16, bool)>,
     errors: usize,
+    /// Current block nesting depth, bounded by [`MAX_DEPTH`].
+    depth: usize,
     /// Names introduced by `typedef` — the shadowing heuristic.
     typedefs: BTreeSet<String>,
 }
@@ -109,6 +118,7 @@ impl<'s> Parser<'s> {
             tokens: Vec::new(),
             trivia: Vec::new(),
             errors: 0,
+            depth: 0,
             typedefs: BTreeSet::new(),
         }
     }
@@ -244,12 +254,11 @@ impl<'s> Parser<'s> {
             }
             self.pos += 1;
         }
-        if consume_stray && self.pos == start {
-            if let Some(b) = self.peek() {
-                if !matches!(b, b';' | b')' | b']' | b'}' | b'{') {
-                    self.pos += 1;
-                }
-            }
+        if consume_stray && self.pos == start && self.peek().is_some() {
+            self.pos += 1; // the stray char rides the error region —
+            // progress is unconditional: exempting the sync byte here
+            // let a caller retry fail_skip at the same cursor forever,
+            // growing the event stream without bound (OOM kill).
         }
         if self.pos > start {
             self.events.push(Event::Token {
@@ -1111,6 +1120,12 @@ impl<'s> Parser<'s> {
     }
 
     fn parse_block(&mut self) {
+        if self.depth >= MAX_DEPTH {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            return;
+        }
+        self.depth += 1;
         self.events.push(Event::Start {
             kind: kinds::BLOCK,
             forward_parent: None,
@@ -1148,6 +1163,7 @@ impl<'s> Parser<'s> {
             self.fail_skip(start, true);
         }
         self.events.push(Event::Finish);
+        self.depth -= 1;
     }
 
     fn skip_semi(&mut self) {
@@ -1254,6 +1270,7 @@ impl<'s> Parser<'s> {
             tokens: Vec::new(),
             trivia: Vec::new(),
             errors: 0,
+            depth: 0,
             typedefs: self.typedefs.clone(),
         };
         if !sub.peek_is_type() {
