@@ -41,6 +41,10 @@ impl Interner {
 
     /// Intern `s`, returning the stable [`Sym`] (the same string always
     /// yields the same symbol).
+    ///
+    /// # Panics
+    /// When more than `u32::MAX` distinct strings have been interned
+    /// (the symbol space is exhausted).
     pub fn intern(&mut self, s: &str) -> Sym {
         if let Some(&sym) = self.ids.get(s) {
             return sym;
@@ -52,6 +56,10 @@ impl Interner {
     }
 
     /// The string for a previously interned symbol.
+    ///
+    /// # Panics
+    /// When `sym` was not produced by this interner (out-of-bounds
+    /// index).
     #[must_use]
     pub fn lookup(&self, sym: Sym) -> &str {
         &self.values[usize::try_from(sym.0).expect("sym index fits usize")]
