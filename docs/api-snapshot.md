@@ -176,6 +176,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/report.rs: pub fn backend_for(&self, rule: RuleId) -> Backend {
 - src/report.rs: pub fn all_deterministic(&self) -> bool {
 - src/report.rs: pub fn left_recursion(grammar: &Grammar) -> Vec<bool> {
+- src/report.rs: pub fn left_recursion_with_first(grammar: &Grammar, first: &FirstSets) -> Vec<bool> {
 
 ## crates/gir-ir
 
@@ -1055,6 +1056,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
 - src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
 - src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub const MAX_DEPTH: usize = 512;
 - src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
 - src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
 - src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
@@ -1122,6 +1124,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/reference.rs: pub const WHITESPACE: u16 = 14;
 - src/reference.rs: pub const ROOT_KIND: u16 = u16::MAX - 3;
 - src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub const MAX_DEPTH: usize = 512;
 - src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
 - src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
 - src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
@@ -1248,6 +1251,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
 - src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
 - src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub const MAX_DEPTH: usize = 512;
 - src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
 - src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
 - src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
@@ -1364,6 +1368,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
 - src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
 - src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub const MAX_DEPTH: usize = 512;
 - src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
 - src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
 - src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
@@ -1423,6 +1428,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
 - src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
 - src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub const MAX_DEPTH: usize = 512;
 - src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
 - src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
 - src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
@@ -1458,6 +1464,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
 - src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
 - src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub const MAX_DEPTH: usize = 512;
 - src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
 - src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
 - src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
@@ -1573,6 +1580,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub const ROOT_KIND: u16 = u16::MAX - 5;
 - src/lib.rs: pub fn parse(source: &str) -> Result<std::sync::Arc<runtime_core::tree::GreenNode>, String> {
 - src/reference.rs: pub const DIAG_SYNTAX: u32 = 0;
+- src/reference.rs: pub const MAX_DEPTH: usize = 512;
 - src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
 - src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
 - src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
