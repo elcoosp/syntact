@@ -212,6 +212,10 @@ impl<'s> TreeBuilder<'s> {
     /// # Errors
     /// When there is no root or more than one root (sibling roots are a
     /// parser bug — packs wrap documents in an implicit ROOT).
+    ///
+    /// # Panics
+    /// Never in practice: the root `Arc` is freshly built and uniquely
+    /// owned at this point; the `expect` documents that invariant.
     pub fn finish(mut self) -> Result<Arc<GreenNode>, String> {
         // Trivia after the last token.
         let mut tail: Vec<GreenChild> = Vec::new();
@@ -251,8 +255,13 @@ impl Sink for TreeBuilder<'_> {
         let Some((kind, children, mut has_error)) = self.stack.pop() else {
             return; // drive_sink validates; never underflow a valid stream
         };
-        let text_len = children.iter().map(GreenChild::text_len).sum();
-        has_error |= children.iter().any(GreenChild::has_error);
+        // Single pass: text length and error flag in one scan (exit is the
+        // hottest sink path — every node pays it once).
+        let mut text_len = 0u32;
+        for child in &children {
+            text_len = text_len.saturating_add(child.text_len());
+            has_error |= child.has_error();
+        }
         let node = Arc::new(GreenNode {
             kind,
             text_len,
@@ -269,6 +278,10 @@ impl Sink for TreeBuilder<'_> {
     }
 
     fn token(&mut self, kind: crate::TokenKind, range: Range<u32>, _n_raw: u8) {
+        // Field-disjoint borrows: `frame` holds `self.stack`, the trivia
+        // scan touches `self.trivia`/`self.trivia_idx` — no `mem::take`
+        // dance (the out-and-back Vec move per token showed up in phase
+        // attribution).
         let Some(frame) = self.stack.last_mut() else {
             return; // token outside any node: drive_sink contract violation
         };
@@ -276,24 +289,21 @@ impl Sink for TreeBuilder<'_> {
         // excluded) and TriviaRecords cover every gap — so each pending
         // record ends at or before the next token's start, and flushing
         // before the leaf preserves byte order exactly.
-        let mut children = std::mem::take(&mut frame.1);
-        // Inline flush (field-disjoint borrows: stack vs trivia).
-        while self.trivia_idx < self.trivia.len() {
-            let record = &self.trivia[self.trivia_idx];
-            if record.range.end > range.start {
-                break;
-            }
-            children.push(GreenChild::Token {
+        let mut idx = self.trivia_idx;
+        let trivia = &self.trivia;
+        while idx < trivia.len() && trivia[idx].range.end <= range.start {
+            let record = &trivia[idx];
+            frame.1.push(GreenChild::Token {
                 kind: record.kind,
                 range: record.range.clone(),
             });
-            self.trivia_idx += 1;
+            idx += 1;
         }
+        self.trivia_idx = idx;
         if kind == crate::ERROR_KIND {
             frame.2 = true;
         }
-        children.push(GreenChild::Token { kind, range });
-        frame.1 = children;
+        frame.1.push(GreenChild::Token { kind, range });
     }
 
     fn error(&mut self, _diag: u32) {
