@@ -26,6 +26,10 @@ impl CompactTable {
     /// Placement reserves a row's ENTIRE read span (empty cells block
     /// future placement too) — a later row can never write into a slot an
     /// earlier row reads, which is what keeps the O(1) lookup honest.
+    ///
+    /// # Panics
+    /// When a payload value equals the `empty` sentinel (the caller
+    /// picked a colliding sentinel — a programming error, not input).
     #[must_use]
     pub fn from_rows(rows: &[Vec<Option<u16>>], empty: u16) -> Self {
         let width = rows.iter().map(Vec::len).max().unwrap_or(0);
