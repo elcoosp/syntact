@@ -69,6 +69,21 @@ const CORPUS: &[(&str, usize)] = &[
     ("#![allow(dead_code)]\nfn f() {}", 0),
     ("/// Doc comment.\nfn documented() {}", 0),
     ("fn f() { let raw = r#\"raw \\\" string\"#; }", 0),
+    // -- feature-completeness pass (type args, dyn paths, let-else,
+    //    if-let vs struct literal, block arms without commas) --------------
+    (
+        "fn f() -> Result<(), Box<dyn std::error::Error>> { Ok(()) }",
+        0,
+    ),
+    ("struct S { f: Option<&'static str> }", 0),
+    ("struct S { m: HashMap<String, Vec<Vec<u8>>> }", 0),
+    ("fn f() { let Some(x) = opt else { return; }; }", 0),
+    ("fn f() { if let Ok(n) = res { dbg!(n); } }", 0),
+    ("fn f() { match p { A => {} B if g => {} _ => {} } }", 0),
+    (
+        "impl<T: Into<f64>> Shape for Sq<T> { fn area(&self) -> f64 { 0.0 } }",
+        0,
+    ),
     // -- malformed with tolerated-error budgets ---------------------------
     ("fn f( {", 3),                     // params closer + body + cascade
     ("let x = ;", 1),                   // missing init
