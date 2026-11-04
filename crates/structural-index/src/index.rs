@@ -87,6 +87,10 @@ impl RegionIndex {
     }
 
     /// Iterate all regions as `(kind, start, end, depth)` tuples.
+    ///
+    /// # Panics
+    /// Never: the range is bounded by [`Self::len`] and `get` succeeds
+    /// for every index below it.
     pub fn iter(&self) -> impl Iterator<Item = (RegionKind, u32, u32, u8)> + '_ {
         (0..self.len()).map(|i| self.get(i).expect("index < len"))
     }
