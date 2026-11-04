@@ -50,11 +50,17 @@ pub fn drive_sink(
 ) -> Result<(), String> {
     let mut range_idx = 0usize;
     let mut cursor = 0u32;
-    for step in output.steps() {
-        match step {
-            crate::events::Step::Enter { kind } => sink.enter(kind),
-            crate::events::Step::Exit => sink.exit(),
-            crate::events::Step::Token { kind, n_raw } => {
+    // Iterate the packed words directly: unpacking the tag inline avoids
+    // materializing a `Step` per word (the enum move + re-branch showed up
+    // in the phase attribution at ~20k steps for a steady-state doc).
+    // Bit-exact with `Output::unpack_word` (same tag layout).
+    for &word in &output.stream {
+        match word & 0xF {
+            crate::events::TAG_ENTER => sink.enter(u16::try_from(word >> 4).unwrap_or(u16::MAX)),
+            crate::events::TAG_EXIT => sink.exit(),
+            crate::events::TAG_TOKEN => {
+                let kind = u16::try_from((word >> 12) & 0xFFFF).unwrap_or(u16::MAX);
+                let n_raw = u8::try_from((word >> 4) & 0xFF).unwrap_or(0);
                 // Callers without a range table (validate-mode consumers,
                 // property tests) get synthesized zero-length ranges at the
                 // running cursor; real token sources supply full ranges.
@@ -66,7 +72,9 @@ pub fn drive_sink(
                 sink.token(kind, range, n_raw);
                 range_idx += 1;
             }
-            crate::events::Step::Error { diag } => sink.error(diag),
+            // TAG_ERROR and the zero word both decode as Error (the same
+            // contract `unpack_word` implements).
+            _ => sink.error(u32::try_from(word >> 4).unwrap_or(u32::MAX)),
         }
     }
     Ok(())
