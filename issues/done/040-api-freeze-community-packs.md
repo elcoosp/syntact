@@ -2,7 +2,7 @@
 
 - **Epic:** Phase 5 (epic 094)
 - **Crates:** workspace + packs/ini, packs/csv, packs/markdown
-- **Status:** open
+- **Status:** done
 
 ## Work
 
