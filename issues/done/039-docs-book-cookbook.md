@@ -2,7 +2,7 @@
 
 - **Epic:** Phase 5 (epic 094)
 - **Crates:** docs/
-- **Status:** open
+- **Status:** done
 
 ## Work
 
