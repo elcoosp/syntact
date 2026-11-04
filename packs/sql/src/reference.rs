@@ -393,7 +393,15 @@ impl<'s> Parser<'s> {
         } else if self.peek_kw("delete") {
             self.parse_delete();
         } else if self.peek_kw("create") {
-            self.parse_create_table();
+            self.parse_create();
+        } else if self.peek_kw("alter") {
+            self.parse_alter();
+        } else if self.peek_kw("drop") {
+            self.parse_drop();
+        } else if self.peek_kw("pragma") {
+            self.parse_pragma();
+        } else if self.peek_kw("begin") || self.peek_kw("commit") || self.peek_kw("rollback") {
+            self.parse_txn();
         } else {
             let start = self.pos;
             self.fail_skip(start, true);
@@ -442,8 +450,10 @@ impl<'s> Parser<'s> {
     }
 
     /// `SELECT [DISTINCT] items [FROM sources] [WHERE …] [GROUP BY …]
-    /// [HAVING …] [ORDER BY …] [LIMIT …]`.
-    #[allow(clippy::too_many_lines)]
+    /// [HAVING …] (UNION [ALL] | EXCEPT | INTERSECT core)* [ORDER BY …]
+    /// [LIMIT …] [OFFSET …]` — each core is its own [`kinds::SELECT`]
+    /// node; the compound operators sit between them as
+    /// [`kinds::COMPOUND`] siblings.
     fn parse_select(&mut self) {
         self.events.push(Event::Start {
             kind: kinds::SELECT,
@@ -455,6 +465,62 @@ impl<'s> Parser<'s> {
             self.bump_kw("distinct");
             self.skip_trivia();
         }
+        self.parse_core_tail();
+        self.events.push(Event::Finish);
+        // Compound operators chain full cores.
+        loop {
+            self.skip_trivia();
+            let op = if self.peek_kw("union") {
+                "union"
+            } else if self.peek_kw("except") {
+                "except"
+            } else if self.peek_kw("intersect") {
+                "intersect"
+            } else {
+                break;
+            };
+            self.events.push(Event::Start {
+                kind: kinds::COMPOUND,
+                forward_parent: None,
+            });
+            self.bump_kw(op);
+            self.skip_trivia();
+            if self.peek_kw("all") {
+                self.bump_kw("all");
+                self.skip_trivia();
+            }
+            self.events.push(Event::Finish);
+            self.skip_trivia();
+            if self.peek_kw("select") {
+                self.events.push(Event::Start {
+                    kind: kinds::SELECT,
+                    forward_parent: None,
+                });
+                self.bump_kw("select");
+                self.skip_trivia();
+                if self.peek_kw("distinct") {
+                    self.bump_kw("distinct");
+                    self.skip_trivia();
+                }
+                self.parse_core_tail();
+                self.events.push(Event::Finish);
+            } else {
+                let start = self.pos;
+                self.fail_skip(start, true);
+            }
+        }
+        for clause in ["order", "limit", "offset"] {
+            self.skip_trivia();
+            if self.peek_kw(clause) {
+                self.parse_clause(clause);
+            }
+        }
+    }
+
+    /// The per-core tail of a select: items, `FROM` + joins, and the
+    /// `WHERE`/`GROUP BY`/`HAVING` clauses.
+    #[allow(clippy::too_many_lines)]
+    fn parse_core_tail(&mut self) {
         // Select items.
         loop {
             self.skip_trivia();
@@ -519,13 +585,12 @@ impl<'s> Parser<'s> {
                 break;
             }
         }
-        for clause in ["where", "group", "having", "order", "limit"] {
+        for clause in ["where", "group", "having"] {
             self.skip_trivia();
             if self.peek_kw(clause) {
                 self.parse_clause(clause);
             }
         }
-        self.events.push(Event::Finish);
     }
 
     /// One named clause: the keyword + its expression list.
@@ -552,6 +617,19 @@ impl<'s> Parser<'s> {
                 self.bump_kw(if self.peek_kw("asc") { "asc" } else { "desc" });
                 self.skip_trivia();
             }
+            // `NULLS FIRST`/`NULLS LAST` ordering suffix.
+            if self.peek_kw("nulls") {
+                self.bump_kw("nulls");
+                self.skip_trivia();
+                if self.peek_kw("first") || self.peek_kw("last") {
+                    self.bump_kw(if self.peek_kw("first") {
+                        "first"
+                    } else {
+                        "last"
+                    });
+                    self.skip_trivia();
+                }
+            }
             if self.peek() == Some(b',') {
                 self.bump(tk::COMMA, 1);
                 continue;
@@ -570,10 +648,15 @@ impl<'s> Parser<'s> {
             || self.peek_kw("having")
             || self.peek_kw("order")
             || self.peek_kw("limit")
+            || self.peek_kw("offset")
             || self.peek_kw("inner")
             || self.peek_kw("left")
             || self.peek_kw("cross")
             || self.peek_kw("join")
+            || self.peek_kw("union")
+            || self.peek_kw("except")
+            || self.peek_kw("intersect")
+            || self.peek_kw("on")
     }
 
     /// A FROM/JOIN source: `table [AS] alias`, `(subquery) [AS] alias`.
@@ -832,6 +915,40 @@ impl<'s> Parser<'s> {
         self.events.push(Event::Finish);
     }
 
+    /// `CREATE` dispatch: `TABLE`, `[UNIQUE] INDEX`, `VIEW`.
+    fn parse_create(&mut self) {
+        match self.peek_next_word() {
+            "unique" | "index" => self.parse_create_index(),
+            "view" => self.parse_create_view(),
+            _ => self.parse_create_table(),
+        }
+    }
+
+    /// The case-folded word after the one at the cursor (used to peek
+    /// the second keyword of `CREATE TABLE|INDEX|VIEW|UNIQUE INDEX`);
+    /// `"none"` when absent.
+    fn peek_next_word(&self) -> &'static str {
+        let start = self.pos as usize + self.scan_word_len() as usize;
+        let mut idx = start;
+        while idx < self.bytes.len() && self.bytes[idx].is_ascii_whitespace() {
+            idx += 1;
+        }
+        let word_start = idx;
+        while idx < self.bytes.len()
+            && (self.bytes[idx].is_ascii_alphanumeric() || self.bytes[idx] == b'_')
+        {
+            idx += 1;
+        }
+        let text = &self.bytes[word_start..idx];
+        match String::from_utf8_lossy(text).to_ascii_lowercase().as_str() {
+            "unique" => "unique",
+            "index" => "index",
+            "view" => "view",
+            "table" => "table",
+            _ => "none",
+        }
+    }
+
     /// `CREATE TABLE t (col constraints, …)`.
     #[allow(clippy::too_many_lines)]
     fn parse_create_table(&mut self) {
@@ -936,6 +1053,240 @@ impl<'s> Parser<'s> {
         }
     }
 
+    /// `CREATE [UNIQUE] INDEX name ON t (col, …)` — column lists ride
+    /// word/number tokens inside the parens (the CREATE TABLE shape).
+    fn parse_create_index(&mut self) {
+        self.events.push(Event::Start {
+            kind: kinds::CREATE_INDEX,
+            forward_parent: None,
+        });
+        self.bump_kw("create");
+        self.skip_trivia();
+        if self.peek_kw("unique") {
+            self.bump_kw("unique");
+            self.skip_trivia();
+        }
+        if self.peek_kw("index") {
+            self.bump_kw("index");
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            self.events.push(Event::Finish);
+            return;
+        }
+        self.skip_trivia();
+        self.bump_word(); // index name
+        self.skip_trivia();
+        if self.peek_kw("on") {
+            self.bump_kw("on");
+            self.skip_trivia();
+            self.bump_word(); // table name
+        }
+        self.skip_trivia();
+        if self.peek() == Some(b'(') {
+            self.bump(tk::LPAREN, 1);
+            loop {
+                self.skip_trivia();
+                if self.peek() == Some(b')') || self.peek().is_none() {
+                    break;
+                }
+                if self.scan_word_len() > 0 {
+                    self.bump_word();
+                } else if self.scan_number_len() > 0 {
+                    let n = self.scan_number_len();
+                    self.bump(tk::NUMBER, n);
+                } else {
+                    let start = self.pos;
+                    self.fail_skip(start, true);
+                }
+                self.skip_trivia();
+                if self.peek() == Some(b',') {
+                    self.bump(tk::COMMA, 1);
+                    continue;
+                }
+                break;
+            }
+            self.skip_trivia();
+            if self.peek() == Some(b')') {
+                self.bump(tk::RPAREN, 1);
+            } else {
+                let start = self.pos;
+                self.fail_skip(start, true);
+            }
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+        }
+        self.events.push(Event::Finish);
+    }
+
+    /// `CREATE VIEW v [AS] SELECT …` — the select rides a full
+    /// [`kinds::SELECT`] node.
+    fn parse_create_view(&mut self) {
+        self.events.push(Event::Start {
+            kind: kinds::CREATE_VIEW,
+            forward_parent: None,
+        });
+        self.bump_kw("create");
+        self.skip_trivia();
+        if self.peek_kw("view") {
+            self.bump_kw("view");
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            self.events.push(Event::Finish);
+            return;
+        }
+        self.skip_trivia();
+        self.bump_word(); // view name
+        self.skip_trivia();
+        if self.peek_kw("as") {
+            self.bump_kw("as");
+            self.skip_trivia();
+        }
+        if self.peek_kw("select") {
+            self.parse_select();
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+        }
+        self.events.push(Event::Finish);
+    }
+
+    /// `ALTER TABLE t action` — `RENAME TO new`, `ADD [COLUMN] def`,
+    /// `DROP [COLUMN] name`; the action words ride WORD tokens.
+    fn parse_alter(&mut self) {
+        self.events.push(Event::Start {
+            kind: kinds::ALTER,
+            forward_parent: None,
+        });
+        self.bump_kw("alter");
+        self.skip_trivia();
+        if self.peek_kw("table") {
+            self.bump_kw("table");
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            self.events.push(Event::Finish);
+            return;
+        }
+        self.skip_trivia();
+        self.bump_word(); // table name
+        self.skip_trivia();
+        // The rest of the action rides word/number tokens (`ADD COLUMN
+        // c INTEGER DEFAULT 0`, `RENAME TO t2`, `DROP COLUMN c`).
+        loop {
+            self.skip_trivia();
+            let words = self.scan_word_len();
+            if words > 0 {
+                self.bump(tk::WORD, words);
+                continue;
+            }
+            let nums = self.scan_number_len();
+            if nums > 0 {
+                self.bump(tk::NUMBER, nums);
+                continue;
+            }
+            break;
+        }
+        self.events.push(Event::Finish);
+    }
+
+    /// `DROP TABLE|INDEX|VIEW [IF EXISTS] name [, name]`.
+    fn parse_drop(&mut self) {
+        self.events.push(Event::Start {
+            kind: kinds::DROP,
+            forward_parent: None,
+        });
+        self.bump_kw("drop");
+        self.skip_trivia();
+        if self.peek_kw("table") || self.peek_kw("index") || self.peek_kw("view") {
+            self.bump_kw(if self.peek_kw("table") {
+                "table"
+            } else if self.peek_kw("index") {
+                "index"
+            } else {
+                "view"
+            });
+        } else {
+            let start = self.pos;
+            self.fail_skip(start, true);
+            self.events.push(Event::Finish);
+            return;
+        }
+        self.skip_trivia();
+        if self.peek_kw("if") {
+            self.bump_kw("if");
+            self.skip_trivia();
+            if self.peek_kw("exists") {
+                self.bump_kw("exists");
+            }
+            self.skip_trivia();
+        }
+        self.bump_word(); // first name
+        loop {
+            self.skip_trivia();
+            if self.peek() == Some(b',') {
+                self.bump(tk::COMMA, 1);
+                self.skip_trivia();
+                self.bump_word();
+                continue;
+            }
+            break;
+        }
+        self.events.push(Event::Finish);
+    }
+
+    /// `PRAGMA name [= value | (value)]`.
+    fn parse_pragma(&mut self) {
+        self.events.push(Event::Start {
+            kind: kinds::PRAGMA,
+            forward_parent: None,
+        });
+        self.bump_kw("pragma");
+        self.skip_trivia();
+        self.bump_word(); // pragma name
+        self.skip_trivia();
+        if self.peek() == Some(b'=') {
+            self.bump(tk::EQUALS, 1);
+            self.skip_trivia();
+            self.parse_expr_bp(0);
+        } else if self.peek() == Some(b'(') {
+            self.bump(tk::LPAREN, 1);
+            self.skip_trivia();
+            self.parse_expr_bp(0);
+            self.skip_trivia();
+            if self.peek() == Some(b')') {
+                self.bump(tk::RPAREN, 1);
+            } else {
+                let start = self.pos;
+                self.fail_skip(start, true);
+            }
+        }
+        self.events.push(Event::Finish);
+    }
+
+    /// `BEGIN [TRANSACTION|DEFERRED|IMMEDIATE|EXCLUSIVE]`,
+    /// `COMMIT`/`END`, `ROLLBACK` — a trailing word rides along.
+    fn parse_txn(&mut self) {
+        self.events.push(Event::Start {
+            kind: kinds::TXN,
+            forward_parent: None,
+        });
+        self.bump_kw(if self.peek_kw("begin") {
+            "begin"
+        } else if self.peek_kw("commit") {
+            "commit"
+        } else {
+            "rollback"
+        });
+        self.skip_trivia();
+        if self.scan_word_len() > 0 {
+            self.bump_word();
+        }
+        self.events.push(Event::Finish);
+    }
+
     // ------------------------------------------------------------------
     // Expressions — precedence climbing
     // ------------------------------------------------------------------
@@ -977,6 +1328,9 @@ impl<'s> Parser<'s> {
     fn peek_unary_kw(&self) -> Option<(&'static str, u8)> {
         if self.peek_kw("not") {
             Some(("not", 5))
+        } else if self.peek_kw("exists") {
+            // `EXISTS (subquery)` — binds tightest of the word unaries.
+            Some(("exists", 8))
         } else {
             None
         }
