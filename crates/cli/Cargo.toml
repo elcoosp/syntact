@@ -18,8 +18,9 @@ runtime-core.workspace = true
 codegen-rust.workspace = true
 lexgen.workspace = true
 harness.workspace = true
-recovery.workspace = true
 packs-json.workspace = true
+packs-toml.workspace = true
+recovery.workspace = true
 
 [lints]
 workspace = true
