@@ -9,14 +9,24 @@
 //!
 //! # Documented subset (v0)
 //!
-//! - **Statements**: expression statements, assignments (chained, aug),
-//!   `return`/`pass`/`break`/`continue`, `import`/`from … import`,
-//!   `del`, `global`, `assert`, `raise`, `if`/`elif`/`else`,
-//!   `while`/`for` (+ `else`), `def` (annotations + defaults + `*`/`**`),
-//!   `class`, decorators. Single-line suites after `:`.
+//! - **Statements**: expression statements, assignments (chained, aug,
+//!   starred targets, annotations `x: T = v`), `return`/`pass`/`break`/
+//!   `continue`, `import`/`from … import`, `del`, `global`, `assert`,
+//!   `raise … from …`, `if`/`elif`/`else`, `while`/`for` (+ `else`),
+//!   `def` (annotations + defaults + `*`/`**`), `async def`,
+//!   `class`, `try`/`except [*] [as e]`/`else`/`finally`,
+//!   `with item [as t], …` (`async with`), decorators,
+//!   `match expr: case pattern [if guard]:` (patterns ride the
+//!   expression grammar: literals, names, tuples, `_`, `|`, guards).
+//!   Single-line suites after `:`.
+//! - **Expressions**: lambda with full parameter lists
+//!   (`lambda x, y=2, *a, **kw: e`), walrus `(n := expr)`,
+//!   `await expr`, slices `[a:b:c]` and multi-item subscripts
+//!   `[i, j::k]`, generator expressions in call position
+//!   (`sum(x for x in xs if x)`), plus the existing comprehensions,
+//!   f-strings, and Pratt operators.
 //! - **Not in the subset** (each parses as an error and recovers):
-//!   `try`/`except`/`finally`, `with`, `lambda`, `yield`, `await`,
-//!   `async`, `match`, walrus.
+//!   `yield` (bare), decorators with arguments beyond dotted names.
 //! - **Scanner**: `INDENT` token = the indent run of a deeper line;
 //!   `DEDENT` = one zero-width token per popped level (also flushed at
 //!   EOF); `NEWLINE` = the `\n`/`\r\n` ending a logical line (inside
@@ -248,6 +258,29 @@ pub mod token_kinds {
     pub const WHITESPACE: u16 = 94;
     /// `# …` comment trivia: never a token event (ADR-008).
     pub const COMMENT: u16 = 95;
+    /// `:=` walrus (expression-level assignment).
+    pub const WALRUS: u16 = 96;
+}
+
+/// Node kinds — dense continuation of the token ids ([`crate::kinds`]
+/// ends at 38, tokens at 96; these continue the dense sequence).
+pub mod node_kinds_ext {
+    /// `try: … except … [else …] [finally: …]`.
+    pub const TRY: u16 = 97;
+    /// One `except [type [as name]]:` handler.
+    pub const EXCEPT: u16 = 98;
+    /// `with item [as target], …: suite`.
+    pub const WITH: u16 = 99;
+    /// One with-item: `expr [as target]`.
+    pub const WITH_ITEM: u16 = 100;
+    /// `match expr: case …` (3.10 structural pattern match).
+    pub const MATCH: u16 = 101;
+    /// One `case pattern [if guard]:` arm.
+    pub const CASE: u16 = 102;
+    /// A subscript slice `[lower:upper:step]`.
+    pub const SLICE: u16 = 103;
+    /// `lambda params: expr`.
+    pub const LAMBDA: u16 = 104;
 }
 
 /// Implicit module-root kind for the green tree — pack-local sentinel,
