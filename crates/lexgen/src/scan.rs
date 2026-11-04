@@ -40,6 +40,13 @@ pub struct Scanner {
 /// Compile a grammar's tokens into a scanner. Token declaration order is
 /// the tie-break priority (keywords first ⇒ keywords win equal-length
 /// matches).
+///
+/// # Errors
+/// [`LexError`] when any token regex fails to compile.
+///
+/// # Panics
+/// When the grammar declares more than `u16::MAX` tokens (the kind
+/// index space).
 pub fn compile(grammar: &Grammar) -> Result<Scanner, LexError> {
     let mut fragments: Vec<Fragment> = Vec::new();
     let mut pattern_of: Vec<u16> = Vec::new();
@@ -70,6 +77,10 @@ fn literal_regex(text: &str) -> Regex {
 impl Scanner {
     /// Scan the whole source into lexemes (token events + trivia flags,
     /// unmatched chars as [`Lexeme::Error`]).
+    ///
+    /// # Panics
+    /// When the source exceeds `u32::MAX` bytes (offsets no longer fit
+    /// the lexeme range type).
     #[must_use]
     pub fn scan(&self, source: &str) -> Vec<Lexeme> {
         let bytes = source.as_bytes();
@@ -135,6 +146,10 @@ impl Scanner {
     /// (zero-length accepts excluded), or a one-char [`Lexeme::Error`]
     /// when nothing matches, so a relexed prefix always agrees with a
     /// full scan of the same text.
+    ///
+    /// # Panics
+    /// When `offset` exceeds `u32::MAX` (offsets no longer fit the
+    /// lexeme range type).
     #[must_use]
     pub fn relex_one(&self, source: &str, offset: usize) -> Option<Lexeme> {
         if offset >= source.len() {
