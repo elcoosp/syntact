@@ -9,3 +9,4 @@ packs that speak it, and the tooling built on top.
 - [Incremental reparsing](incremental.md)
 - [Queries](queries.md)
 - [Recovery](recovery.md)
+- [Grammar language server](grammar-lsp.md)
