@@ -18,6 +18,9 @@
 //!   for JSON, the shadow-automaton CPCT+ repair loop (issue 029).
 //! - `lsp` — the `.gir` grammar language server over stdio
 //!   (JSON-RPC 2.0, LSP 3.17 subset; issue 041).
+//! - `pack-lsp` — the pack language server over stdio: diagnostics,
+//!   outline symbols, folding, semantic tokens, highlights, and
+//!   selection ranges for the ten shipped pack languages (issue 042).
 //!
 //! [`run`] is a pure function from arguments to an exit code, so the
 //! integration tests drive it directly.
@@ -84,6 +87,12 @@ pub enum Command {
         #[arg(long, default_value_t = lsp::transport::DEFAULT_MAX_MESSAGE)]
         max_message: usize,
     },
+    /// Serve the pack language server over stdio (issue 042).
+    PackLsp {
+        /// Bound one framed inbound message at this many bytes.
+        #[arg(long, default_value_t = lsp::transport::DEFAULT_MAX_MESSAGE)]
+        max_message: usize,
+    },
 }
 
 /// Exit codes: 0 ok, 1 negative verdict, 2 usage/IO error.
@@ -116,6 +125,7 @@ where
         Command::Conformance { files } => cmd_conformance(&files),
         Command::Trace { pack, file, json } => cmd_trace(&pack, &file, json),
         Command::Lsp { max_message } => cmd_lsp(max_message),
+        Command::PackLsp { max_message } => cmd_pack_lsp(max_message),
     })
 }
 
@@ -125,6 +135,14 @@ fn cmd_lsp(max_message: usize) -> i32 {
     let mut stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
     lsp::transport::serve(&mut BufReader::new(&mut stdin), &mut stdout, max_message)
+}
+
+/// Serve the pack language server over stdin/stdout.
+fn cmd_pack_lsp(max_message: usize) -> i32 {
+    use std::io::BufReader;
+    let mut stdin = std::io::stdin().lock();
+    let mut stdout = std::io::stdout().lock();
+    lsp::pack::server::serve(&mut BufReader::new(&mut stdin), &mut stdout, max_message)
 }
 
 /// Read a file (or stdin for `-`).
@@ -305,6 +323,27 @@ mod tests {
         match cli.command {
             Command::Lsp { max_message } => assert_eq!(max_message, 4096),
             _ => panic!("expected the lsp subcommand"),
+        }
+    }
+
+    #[test]
+    fn pack_lsp_subcommand_parses_with_the_default_bound() {
+        let cli = Cli::try_parse_from(["syntact", "pack-lsp"]).expect("parses");
+        match cli.command {
+            Command::PackLsp { max_message } => {
+                assert_eq!(max_message, lsp::transport::DEFAULT_MAX_MESSAGE);
+            }
+            _ => panic!("expected the pack-lsp subcommand"),
+        }
+    }
+
+    #[test]
+    fn pack_lsp_subcommand_accepts_a_custom_message_bound() {
+        let cli =
+            Cli::try_parse_from(["syntact", "pack-lsp", "--max-message", "2048"]).expect("parses");
+        match cli.command {
+            Command::PackLsp { max_message } => assert_eq!(max_message, 2048),
+            _ => panic!("expected the pack-lsp subcommand"),
         }
     }
 }
