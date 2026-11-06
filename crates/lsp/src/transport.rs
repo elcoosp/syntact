@@ -1,17 +1,41 @@
-//! The stdio serve loop (issue 041): framed reads, dispatch, framed
-//! writes, exit-code propagation. All policy lives in
-//! [`crate::server::Server::handle_message`]; this module only moves
-//! bytes.
+//! The stdio serve loop (issues 041/042): framed reads, dispatch,
+//! framed writes, exit-code propagation. All policy lives in the
+//! [`Handler`] implementations ([`crate::server::Server`] for grammar
+//! authoring, [`crate::pack::server::PackServer`] for pack languages);
+//! this module only moves bytes.
 
 use std::io::{BufRead, Write};
+
+use serde_json::Value;
 
 use crate::rpc::{self, FrameError};
 use crate::server::{Flow, Server};
 
+/// A message handler behind the serve loop: one decoded frame in, the
+/// optional outgoing frame and a flow directive out.
+pub trait Handler {
+    /// Handle one decoded message body.
+    fn handle_message(&mut self, body: &[u8]) -> (Option<Value>, Flow);
+
+    /// The process exit code for `exit`.
+    fn exit_code(&self) -> i32;
+}
+
+impl Handler for Server {
+    fn handle_message(&mut self, body: &[u8]) -> (Option<Value>, Flow) {
+        Server::handle_message(self, body)
+    }
+
+    fn exit_code(&self) -> i32 {
+        Server::exit_code(self)
+    }
+}
+
 /// The default inbound message bound ([`rpc::MAX_MESSAGE`]).
 pub const DEFAULT_MAX_MESSAGE: usize = rpc::MAX_MESSAGE;
 
-/// Serve the LSP session over `reader`/`writer` until `exit` or EOF.
+/// Serve the grammar LSP session over `reader`/`writer` until `exit`
+/// or EOF (the issue-041 entry point).
 ///
 /// `max_message` bounds one framed message (see [`rpc::MAX_MESSAGE`]).
 ///
@@ -19,10 +43,21 @@ pub const DEFAULT_MAX_MESSAGE: usize = rpc::MAX_MESSAGE;
 /// a broken stream.
 pub fn serve(reader: &mut impl BufRead, writer: &mut impl Write, max_message: usize) -> i32 {
     let mut server = Server::new();
+    serve_with(&mut server, reader, writer, max_message)
+}
+
+/// Serve any [`Handler`] over `reader`/`writer` (issue 042: the pack
+/// server rides the same loop).
+pub fn serve_with(
+    handler: &mut dyn Handler,
+    reader: &mut impl BufRead,
+    writer: &mut impl Write,
+    max_message: usize,
+) -> i32 {
     loop {
         match rpc::read_frame(reader, max_message) {
             Ok(body) => {
-                let (outgoing, flow) = server.handle_message(&body);
+                let (outgoing, flow) = handler.handle_message(&body);
                 if let Some(value) = outgoing {
                     let Ok(bytes) = serde_json::to_vec(&value) else {
                         return 1;
@@ -32,7 +67,7 @@ pub fn serve(reader: &mut impl BufRead, writer: &mut impl Write, max_message: us
                     }
                 }
                 if flow == Flow::Exit {
-                    return server.exit_code();
+                    return handler.exit_code();
                 }
             }
             // The client hung up gracefully: a clean shutdown.
