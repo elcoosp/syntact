@@ -1,6 +1,6 @@
 [package]
 name = "lsp"
-description = "gir-lsp: the .gir grammar language server (roadmap §9.4, issue 041)"
+description = "the language servers: gir-lsp for grammar authoring (issue 041) and pack-lsp over the shipped packs (issue 042, roadmap p3d)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,6 +13,17 @@ gir-syntax.workspace = true
 gir-ir.workspace = true
 gir-analysis.workspace = true
 lr-shadow.workspace = true
+runtime-core.workspace = true
+packs-json.workspace = true
+packs-toml.workspace = true
+packs-python.workspace = true
+packs-typescript.workspace = true
+packs-rust.workspace = true
+packs-c.workspace = true
+packs-sql.workspace = true
+packs-ini.workspace = true
+packs-csv.workspace = true
+packs-markdown.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 
