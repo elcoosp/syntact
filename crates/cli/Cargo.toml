@@ -18,6 +18,7 @@ runtime-core.workspace = true
 codegen-rust.workspace = true
 lexgen.workspace = true
 harness.workspace = true
+lsp.workspace = true
 packs-json.workspace = true
 packs-toml.workspace = true
 recovery.workspace = true
