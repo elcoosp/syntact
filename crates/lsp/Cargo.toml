@@ -1,6 +1,6 @@
 [package]
 name = "lsp"
-description = "LSP server scaffolding"
+description = "gir-lsp: the .gir grammar language server (roadmap §9.4, issue 041)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,6 +9,15 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+gir-syntax.workspace = true
+gir-ir.workspace = true
+gir-analysis.workspace = true
+lr-shadow.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
 
 [lints]
 workspace = true
