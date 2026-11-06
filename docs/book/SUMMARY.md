@@ -10,3 +10,4 @@ packs that speak it, and the tooling built on top.
 - [Queries](queries.md)
 - [Recovery](recovery.md)
 - [Grammar language server](grammar-lsp.md)
+- [Pack language server](pack-lsp.md)
