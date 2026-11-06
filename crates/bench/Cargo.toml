@@ -12,6 +12,8 @@ authors.workspace = true
 harness.workspace = true
 runtime-core.workspace = true
 packs-json.workspace = true
+lsp.workspace = true
+gir-syntax.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
@@ -28,6 +30,10 @@ packs-typescript.workspace = true
 
 [[bench]]
 name = "json"
+harness = false
+
+[[bench]]
+name = "lsp"
 harness = false
 
 [lints]
