@@ -692,7 +692,142 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 
 ## crates/lsp
 
-(no public items)
+- src/analysis.rs: pub enum DeclKind {
+- src/analysis.rs: pub struct Decl {
+- src/analysis.rs: pub name: String,
+- src/analysis.rs: pub kind: DeclKind,
+- src/analysis.rs: pub name_span: ByteSpan,
+- src/analysis.rs: pub full_span: ByteSpan,
+- src/analysis.rs: pub struct RefSite {
+- src/analysis.rs: pub name: String,
+- src/analysis.rs: pub span: ByteSpan,
+- src/analysis.rs: pub struct Symbols {
+- src/analysis.rs: pub decls: Vec<Decl>,
+- src/analysis.rs: pub refs: Vec<RefSite>,
+- src/analysis.rs: pub fn of_doc(doc: &GirDoc) -> Self {
+- src/analysis.rs: pub fn decl(&self, name: &str) -> Option<&Decl> {
+- src/analysis.rs: pub fn decl_at(&self, offset: usize) -> Option<&Decl> {
+- src/analysis.rs: pub fn ref_at(&self, offset: usize) -> Option<&RefSite> {
+- src/analysis.rs: pub fn resolve(&self, site: &RefSite) -> Option<&Decl> {
+- src/analysis.rs: pub fn refs_of(&self, decl: &Decl) -> Vec<&RefSite> {
+- src/analysis.rs: pub trait SpanExt {
+- src/analysis.rs: pub enum DiagSeverity {
+- src/analysis.rs: pub struct Diag {
+- src/analysis.rs: pub range: Range,
+- src/analysis.rs: pub severity: DiagSeverity,
+- src/analysis.rs: pub message: String,
+- src/analysis.rs: pub struct Location {
+- src/analysis.rs: pub uri: String,
+- src/analysis.rs: pub range: Range,
+- src/analysis.rs: pub struct Hover {
+- src/analysis.rs: pub contents: HoverContents,
+- src/analysis.rs: pub range: Range,
+- src/analysis.rs: pub struct HoverContents {
+- src/analysis.rs: pub kind: &'static str,
+- src/analysis.rs: pub value: String,
+- src/analysis.rs: pub struct CompletionItem {
+- src/analysis.rs: pub label: String,
+- src/analysis.rs: pub kind: u8,
+- src/analysis.rs: pub detail: &'static str,
+- src/analysis.rs: pub documentation: String,
+- src/analysis.rs: pub const COMPLETION_RULE: u8 = 3;
+- src/analysis.rs: pub const COMPLETION_TOKEN: u8 = 14;
+- src/analysis.rs: pub const COMPLETION_MARKER: u8 = 24;
+- src/analysis.rs: pub struct TextEdit {
+- src/analysis.rs: pub range: Range,
+- src/analysis.rs: pub new_text: String,
+- src/analysis.rs: pub struct WorkspaceEdit {
+- src/analysis.rs: pub changes: BTreeMap<String, Vec<TextEdit>>,
+- src/analysis.rs: pub struct SymbolInfo {
+- src/analysis.rs: pub name: String,
+- src/analysis.rs: pub kind: u8,
+- src/analysis.rs: pub range: Range,
+- src/analysis.rs: pub selection_range: Range,
+- src/analysis.rs: pub const SYMBOL_RULE: u8 = 12;
+- src/analysis.rs: pub const SYMBOL_TOKEN: u8 = 13;
+- src/analysis.rs: pub enum RenameError {
+- src/analysis.rs: pub fn annotation_doc(word: &str) -> Option<&'static str> {
+- src/analysis.rs: pub struct Document {
+- src/analysis.rs: pub text: String,
+- src/analysis.rs: pub line_index: LineIndex,
+- src/analysis.rs: pub surface: Option<GirDoc>,
+- src/analysis.rs: pub symbols: Symbols,
+- src/analysis.rs: pub diagnostics: Vec<Diag>,
+- src/analysis.rs: pub fn open(text: String) -> Self {
+- src/analysis.rs: pub fn edit(&mut self, span: Option<ByteSpan>, new_text: &str) {
+- src/analysis.rs: pub fn symbol_at(&self, offset: usize) -> Option<&Decl> {
+- src/analysis.rs: pub fn hover_at(&self, offset: usize) -> Option<Hover> {
+- src/analysis.rs: pub fn completion_at(&self, offset: usize) -> Vec<CompletionItem> {
+- src/analysis.rs: pub fn definition_at(&self, offset: usize) -> Option<ByteSpan> {
+- src/analysis.rs: pub fn references_at(&self, offset: usize, include_decl: bool) -> Vec<ByteSpan> {
+- src/analysis.rs: pub fn rename_at(&self, offset: usize, new_name: &str) -> Result<Vec<ByteSpan>, RenameError> {
+- src/analysis.rs: pub fn document_symbols(&self) -> Vec<SymbolInfo> {
+- src/analysis.rs: pub struct Workspace {
+- src/analysis.rs: pub fn new() -> Self {
+- src/analysis.rs: pub fn open(&mut self, uri: &str, text: String) {
+- src/analysis.rs: pub fn change(&mut self, uri: &str, edits: &[(Option<ByteSpan>, &str)]) -> bool {
+- src/analysis.rs: pub fn close(&mut self, uri: &str) -> bool {
+- src/analysis.rs: pub fn get(&self, uri: &str) -> Option<&Document> {
+- src/analysis.rs: pub fn uris(&self) -> Vec<String> {
+- src/analysis.rs: pub fn hover(&self, uri: &str, offset: usize) -> Option<Hover> {
+- src/analysis.rs: pub fn completion(&self, uri: &str, offset: usize) -> Vec<CompletionItem> {
+- src/analysis.rs: pub fn document_symbols(&self, uri: &str) -> Vec<SymbolInfo> {
+- src/analysis.rs: pub fn diagnostics(&self, uri: &str) -> Vec<Diag> {
+- src/analysis.rs: pub fn definition(&self, uri: &str, offset: usize) -> Option<Location> {
+- src/analysis.rs: pub fn references(&self, uri: &str, offset: usize, include_decl: bool) -> Vec<Location> {
+- src/analysis.rs: pub fn rename(
+- src/analysis.rs: pub fn offset_of(&self, uri: &str, position: Position) -> Option<usize> {
+- src/index.rs: pub struct Position {
+- src/index.rs: pub line: u32,
+- src/index.rs: pub character: u32,
+- src/index.rs: pub struct Range {
+- src/index.rs: pub start: Position,
+- src/index.rs: pub end: Position,
+- src/index.rs: pub struct LineIndex {
+- src/index.rs: pub fn new(text: &str) -> Self {
+- src/index.rs: pub fn position(&self, text: &str, offset: usize) -> Position {
+- src/index.rs: pub fn offset(&self, text: &str, position: Position) -> Option<usize> {
+- src/index.rs: pub fn range(&self, text: &str, span: ByteSpan) -> Range {
+- src/index.rs: pub fn span(&self, text: &str, range: Range) -> Option<ByteSpan> {
+- src/index.rs: pub fn len(&self) -> usize {
+- src/index.rs: pub fn is_empty(&self) -> bool {
+- src/index.rs: pub fn word_at(text: &str, offset: usize) -> Option<ByteSpan> {
+- src/index.rs: pub fn quoted_at(text: &str, offset: usize) -> Option<ByteSpan> {
+- src/lib.rs: pub mod analysis;
+- src/lib.rs: pub mod index;
+- src/lib.rs: pub mod rpc;
+- src/lib.rs: pub mod server;
+- src/lib.rs: pub mod transport;
+- src/lib.rs: pub use analysis::{
+- src/lib.rs: pub use index::{LineIndex, Position, Range};
+- src/lib.rs: pub use rpc::{Id, Incoming};
+- src/rpc.rs: pub const MAX_MESSAGE: usize = 8 * 1024 * 1024;
+- src/rpc.rs: pub const PARSE_ERROR: i64 = -32700;
+- src/rpc.rs: pub const INVALID_REQUEST: i64 = -32600;
+- src/rpc.rs: pub const METHOD_NOT_FOUND: i64 = -32601;
+- src/rpc.rs: pub const INVALID_PARAMS: i64 = -32602;
+- src/rpc.rs: pub const INTERNAL_ERROR: i64 = -32603;
+- src/rpc.rs: pub const SERVER_NOT_INITIALIZED: i64 = -32002;
+- src/rpc.rs: pub enum FrameError {
+- src/rpc.rs: pub enum Id {
+- src/rpc.rs: pub fn to_value(&self) -> Value {
+- src/rpc.rs: pub enum Incoming {
+- src/rpc.rs: pub enum RpcError {
+- src/rpc.rs: pub fn read_frame(reader: &mut impl BufRead, max_message: usize) -> Result<Vec<u8>, FrameError> {
+- src/rpc.rs: pub fn write_frame(writer: &mut impl Write, body: &[u8]) -> std::io::Result<()> {
+- src/rpc.rs: pub fn parse_incoming(body: &[u8]) -> Result<Incoming, RpcError> {
+- src/rpc.rs: pub fn response_ok(id: &Id, result: Value) -> Value {
+- src/rpc.rs: pub fn response_err(id: &Id, code: i64, message: &str) -> Value {
+- src/rpc.rs: pub fn notification(method: &str, params: Value) -> Value {
+- src/server.rs: pub enum Flow {
+- src/server.rs: pub struct Server {
+- src/server.rs: pub workspace: Workspace,
+- src/server.rs: pub fn capabilities() -> Value {
+- src/server.rs: pub fn new() -> Self {
+- src/server.rs: pub fn exit_code(&self) -> i32 {
+- src/server.rs: pub fn handle_message(&mut self, body: &[u8]) -> (Option<Value>, Flow) {
+- src/transport.rs: pub const DEFAULT_MAX_MESSAGE: usize = rpc::MAX_MESSAGE;
+- src/transport.rs: pub fn serve(reader: &mut impl BufRead, writer: &mut impl Write, max_message: usize) -> i32 {
 
 ## crates/playground-server
 
