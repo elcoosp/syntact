@@ -1,9 +1,15 @@
-//! # lsp — `gir-lsp`, the `.gir` grammar language server (§9.4, issue 041)
+//! # lsp — the language servers (§9.4 + roadmap p3d)
 //!
-//! The language server for grammar authoring: completion of rules and
-//! tokens, hover on annotations, inline conflict squiggles (the
-//! determinism report plus the LR(1) shadow automaton), go-to-references
-//! across grammar files, and rename with stable-ID preservation.
+//! Two servers over one spine:
+//!
+//! - `gir-lsp` — the `.gir` grammar language server (issue 041):
+//!   completion of rules and tokens, hover on annotations, inline
+//!   conflict squiggles, go-to-references, rename with stable-ID
+//!   preservation ([`analysis`]).
+//! - `pack-lsp` — the pack language server (issue 042, roadmap §12.2
+//!   p3d "LSP for packs"): diagnostics, outline symbols, folding,
+//!   semantic tokens, highlights, and selection ranges over the green
+//!   trees the shipped packs parse ([`pack`]).
 //!
 //! Posture: std-only, hand-rolled LSP 3.17 subset over JSON-RPC 2.0 —
 //! the same thin-wrapper discipline as the playground server (no async
@@ -11,10 +17,11 @@
 //!
 //! - [`rpc`] — `Content-Length` framing + the JSON-RPC envelope layer.
 //! - [`index`] — byte ↔ UTF-16 position mapping and word scanning.
-//! - [`analysis`] — the document model: symbols, references, hover,
-//!   completion, rename, diagnostics.
-//! - [`server`] — workspace state + the method dispatch table.
-//! - [`transport`] — the stdio serve loop.
+//! - [`analysis`] — the grammar document model: symbols, references,
+//!   hover, completion, rename, diagnostics.
+//! - [`server`] — the grammar server workspace + dispatch table.
+//! - [`pack`] — the pack server (registry, document views, dispatch).
+//! - [`transport`] — the stdio serve loop (shared by both servers).
 //!
 //! ```no_run
 //! use lsp::transport;
@@ -29,6 +36,7 @@
 
 pub mod analysis;
 pub mod index;
+pub mod pack;
 pub mod rpc;
 pub mod server;
 pub mod transport;
@@ -38,4 +46,7 @@ pub use analysis::{
     RefSite, SymbolInfo, Symbols, Workspace, WorkspaceEdit,
 };
 pub use index::{LineIndex, Position, Range};
+pub use pack::{
+    DocumentHighlight, FoldingRange, Outline, PackServer, PackSymbol, SEMANTIC_TOKEN_TYPES,
+};
 pub use rpc::{Id, Incoming};
