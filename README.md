@@ -60,7 +60,7 @@ crates/
 ├── structural-index  64-byte block scanner + flat SoA region index (~16 B/region)
 ├── cli               syntact check / build / conflicts / conformance / trace / lsp
 ├── bench             criterion suites + allocation-budget gates
-├── lsp               the .gir grammar language server (stdio, issue 041)
+├── lsp               the language servers: grammar authoring (041) + pack-lsp (042)
 └── packs/
     ├── json          reference JSON pack (the differential oracle)
     ├── toml  typescript  python  rust  c  sql      flagship packs
