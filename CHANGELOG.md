@@ -6,6 +6,28 @@ the [semver policy](docs/semver-policy.md).
 
 ## [Unreleased]
 
+### Editor tooling — pack-lsp (issue 042)
+
+- **lsp**: the pack language server (roadmap §12.2 p3d "LSP for
+  packs") — a std-only LSP 3.17 server over stdio for the ten shipped
+  pack languages. Documents resolve their pack by `languageId` then uri
+  extension; one pack parse per version builds the green tree plus a
+  parent-indexed outline from which every view is prebuilt: error-region
+  diagnostics (push + pull), a hierarchical document outline named by
+  first-significant tokens, folding ranges, shape-classified semantic
+  tokens (fixed four-entry legend, delta-encoded), kind+text document
+  highlight, and selection ranges. The stdio transport loop is
+  generalized behind a `Handler` trait both servers implement. Served
+  by `syntact pack-lsp`.
+- **cli**: `pack-lsp` subcommand (`--max-message` bound, default 8 MiB).
+- **bench**: `benches/pack_lsp.rs` (open/didChange/query latencies for
+  json+toml+python fixtures) and `tests/pack_lsp_budgets.rs` dhat gates
+  (open ≤ 450 blocks/KiB incl. the pack parse, zero-alloc no-match
+  highlight and prebuilt-view reads).
+- **perf**: the outline emits span-boundary events in document order, so
+  one monotonic UTF-16 sweep (no sort) positions every view; document
+  open and didChange dropped ~24% on the JSON fixture.
+
 ### Editor tooling — gir-lsp (issue 041)
 
 - **lsp**: the `.gir` grammar language server — std-only JSON-RPC 2.0
