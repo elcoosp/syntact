@@ -5,7 +5,9 @@ fn main() {
     match cli::run(args) {
         Ok(code) => std::process::exit(code),
         Err(message) => {
-            eprintln!("syntact: {message}\n\nusage: syntact <check|build|conflicts|conformance> …");
+            eprintln!(
+                "syntact: {message}\n\nusage: syntact <check|build|conflicts|conformance|lsp> …"
+            );
             std::process::exit(cli::USAGE);
         }
     }
