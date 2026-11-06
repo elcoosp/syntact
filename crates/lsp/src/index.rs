@@ -113,6 +113,23 @@ impl LineIndex {
         self.line_starts.len()
     }
 
+    /// The byte offset where `line` starts (`None` past the last line).
+    #[must_use]
+    pub fn line_start(&self, line: usize) -> Option<usize> {
+        self.line_starts.get(line).map(|start| *start as usize)
+    }
+
+    /// The line containing byte `offset` (binary search only — no
+    /// UTF-16 character accounting).
+    #[must_use]
+    pub fn line_of(&self, offset: usize) -> usize {
+        let offset = u32::try_from(offset).unwrap_or(u32::MAX);
+        match self.line_starts.binary_search(&offset) {
+            Ok(exact) => exact,
+            Err(insert) => insert.saturating_sub(1),
+        }
+    }
+
     /// Whether the index has a single line.
     #[must_use]
     pub fn is_empty(&self) -> bool {
