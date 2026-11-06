@@ -58,8 +58,9 @@ crates/
 ├── incremental       reparse engine: relex fast path, fragment reuse, changed-range splicing
 ├── query             tree-sitter-shaped query compiler + streaming matcher (.scm-q)
 ├── structural-index  64-byte block scanner + flat SoA region index (~16 B/region)
-├── cli               syntact check / build / conflicts / conformance / trace
+├── cli               syntact check / build / conflicts / conformance / trace / lsp
 ├── bench             criterion suites + allocation-budget gates
+├── lsp               the .gir grammar language server (stdio, issue 041)
 └── packs/
     ├── json          reference JSON pack (the differential oracle)
     ├── toml  typescript  python  rust  c  sql      flagship packs
