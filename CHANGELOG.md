@@ -6,6 +6,24 @@ the [semver policy](docs/semver-policy.md).
 
 ## [Unreleased]
 
+### Editor tooling — gir-lsp (issue 041)
+
+- **lsp**: the `.gir` grammar language server — std-only JSON-RPC 2.0
+  over stdio with LSP `Content-Length` framing: completion of
+  rules/tokens/markers, hover on annotations and declarations, inline
+  conflict squiggles (surface errors, LL(1) conflicts downgraded on
+  pratt rules, LR(1) shadow conflicts via production origins,
+  unreachable rules), definition/references, document symbols, and
+  rename with stable-ID preservation (declaration order — and the
+  dense `RuleId`/`TokenId` numbering — never moves). Incremental
+  `didChange` sync with UTF-16 position mapping (binary-searched line
+  index). Served by `syntact lsp`.
+- **cli**: `lsp` subcommand (`--max-message` bound, default 8 MiB).
+- **bench**: `benches/lsp.rs` (open/reanalysis/query latencies) and
+  `tests/lsp_budgets.rs` dhat gates (zero-alloc definition lookup,
+  per-item completion, per-decl symbols, per-site rename, open
+  ≤ 600 KiB/KiB incl. the external loader bound).
+
 ### Phase 5 — ecosystem 1.0 (issues 037–040)
 
 - **importer**: tree-sitter `grammar.js` → gir KDL converter with a
