@@ -118,7 +118,9 @@ version = "1.0.0"
 dependencies = [
  "criterion",
  "dhat",
+ "gir-syntax",
  "harness",
+ "lsp",
  "packs-c",
  "packs-csv",
  "packs-ini",
@@ -246,6 +248,7 @@ dependencies = [
  "incremental",
  "lexgen",
  "lr-shadow",
+ "lsp",
  "packs-json",
  "packs-toml",
  "pretty_assertions",
@@ -566,6 +569,15 @@ dependencies = [
 [[package]]
 name = "lsp"
 version = "1.0.0"
+dependencies = [
+ "gir-analysis",
+ "gir-ir",
+ "gir-syntax",
+ "lr-shadow",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "memchr"
