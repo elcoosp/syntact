@@ -790,17 +790,119 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/index.rs: pub fn range(&self, text: &str, span: ByteSpan) -> Range {
 - src/index.rs: pub fn span(&self, text: &str, range: Range) -> Option<ByteSpan> {
 - src/index.rs: pub fn len(&self) -> usize {
+- src/index.rs: pub fn line_start(&self, line: usize) -> Option<usize> {
+- src/index.rs: pub fn line_of(&self, offset: usize) -> usize {
 - src/index.rs: pub fn is_empty(&self) -> bool {
 - src/index.rs: pub fn word_at(text: &str, offset: usize) -> Option<ByteSpan> {
 - src/index.rs: pub fn quoted_at(text: &str, offset: usize) -> Option<ByteSpan> {
 - src/lib.rs: pub mod analysis;
 - src/lib.rs: pub mod index;
+- src/lib.rs: pub mod pack;
 - src/lib.rs: pub mod rpc;
 - src/lib.rs: pub mod server;
 - src/lib.rs: pub mod transport;
 - src/lib.rs: pub use analysis::{
 - src/lib.rs: pub use index::{LineIndex, Position, Range};
+- src/lib.rs: pub use pack::{
 - src/lib.rs: pub use rpc::{Id, Incoming};
+- src/pack/document.rs: pub const SYMBOL_OBJECT: u32 = 19;
+- src/pack/document.rs: pub const HIGHLIGHT_TEXT: u32 = 1;
+- src/pack/document.rs: pub const SEMANTIC_TOKEN_TYPES: [&str; 4] = ["string", "number", "operator", "identifier"];
+- src/pack/document.rs: pub const STRING: u32 = 0;
+- src/pack/document.rs: pub const NUMBER: u32 = 1;
+- src/pack/document.rs: pub const OPERATOR: u32 = 2;
+- src/pack/document.rs: pub const IDENTIFIER: u32 = 3;
+- src/pack/document.rs: pub struct PackSymbol {
+- src/pack/document.rs: pub name: String,
+- src/pack/document.rs: pub kind: u32,
+- src/pack/document.rs: pub range: Range,
+- src/pack/document.rs: pub selection_range: Range,
+- src/pack/document.rs: pub children: Vec<PackSymbol>,
+- src/pack/document.rs: pub struct FoldingRange {
+- src/pack/document.rs: pub start_line: u32,
+- src/pack/document.rs: pub end_line: u32,
+- src/pack/document.rs: pub struct DocumentHighlight {
+- src/pack/document.rs: pub range: Range,
+- src/pack/document.rs: pub kind: u32,
+- src/pack/document.rs: pub struct Document {
+- src/pack/document.rs: pub uri: String,
+- src/pack/document.rs: pub pack: &'static str,
+- src/pack/document.rs: pub text: String,
+- src/pack/document.rs: pub tree: Arc<GreenNode>,
+- src/pack/document.rs: pub line_index: LineIndex,
+- src/pack/document.rs: pub outline: Outline,
+- src/pack/document.rs: pub diagnostics: Vec<crate::analysis::Diag>,
+- src/pack/document.rs: pub symbols: Vec<PackSymbol>,
+- src/pack/document.rs: pub folding: Vec<FoldingRange>,
+- src/pack/document.rs: pub semantic_data: Vec<u32>,
+- src/pack/document.rs: pub fn open(
+- src/pack/document.rs: pub fn edit(
+- src/pack/document.rs: pub fn build_views(&mut self) {
+- src/pack/document.rs: pub(crate) fn span_positions(&self) -> Vec<[Position; SLOT_COUNT]> {
+- src/pack/document.rs: pub fn highlight(&self, offset: usize) -> Vec<DocumentHighlight> {
+- src/pack/document.rs: pub fn selection_chain(&self, offset: usize) -> Vec<Range> {
+- src/pack/document.rs: pub fn symbol_name(raw: &str) -> String {
+- src/pack/document.rs: pub fn classify_token(text: &str) -> Option<u32> {
+- src/pack/document.rs: pub fn semantic_token_data(
+- src/pack/mod.rs: pub mod document;
+- src/pack/mod.rs: pub mod outline;
+- src/pack/mod.rs: pub mod registry;
+- src/pack/mod.rs: pub mod server;
+- src/pack/mod.rs: pub use document::{Document, DocumentHighlight, FoldingRange, PackSymbol};
+- src/pack/mod.rs: pub use outline::Outline;
+- src/pack/mod.rs: pub use server::{PackServer, SEMANTIC_TOKEN_TYPES};
+- src/pack/outline.rs: pub struct OutlineNode {
+- src/pack/outline.rs: pub kind: u16,
+- src/pack/outline.rs: pub start: u32,
+- src/pack/outline.rs: pub end: u32,
+- src/pack/outline.rs: pub parent: Option<u32>,
+- src/pack/outline.rs: pub child_count: u32,
+- src/pack/outline.rs: pub subtree_end: u32,
+- src/pack/outline.rs: pub first_significant: Option<Range<u32>>,
+- src/pack/outline.rs: pub fn contains(&self, offset: usize) -> bool {
+- src/pack/outline.rs: pub const SLOT_START: u8 = 0;
+- src/pack/outline.rs: pub const SLOT_END: u8 = 1;
+- src/pack/outline.rs: pub const SLOT_FS_START: u8 = 2;
+- src/pack/outline.rs: pub const SLOT_FS_END: u8 = 3;
+- src/pack/outline.rs: pub const SLOT_FOLD_LAST: u8 = 4;
+- src/pack/outline.rs: pub const SLOT_COUNT: usize = 5;
+- src/pack/outline.rs: pub const TOKEN_SLOT_COUNT: usize = 2;
+- src/pack/outline.rs: pub struct Outline {
+- src/pack/outline.rs: pub nodes: Vec<OutlineNode>,
+- src/pack/outline.rs: pub tokens: Vec<(u16, Range<u32>)>,
+- src/pack/outline.rs: pub errors: Vec<(u16, Range<u32>)>,
+- src/pack/outline.rs: pub events: Vec<(u32, u8, u32)>,
+- src/pack/outline.rs: pub fn build(tree: &Arc<GreenNode>, text: &str) -> Self {
+- src/pack/outline.rs: pub fn root(&self) -> u32 {
+- src/pack/outline.rs: pub fn innermost(&self, offset: usize) -> Option<u32> {
+- src/pack/outline.rs: pub fn chain(&self, index: u32) -> Vec<u32> {
+- src/pack/registry.rs: pub type ParseFn = fn(&str) -> Result<Arc<GreenNode>, String>;
+- src/pack/registry.rs: pub struct PackEntry {
+- src/pack/registry.rs: pub name: &'static str,
+- src/pack/registry.rs: pub language_id: &'static str,
+- src/pack/registry.rs: pub extensions: &'static [&'static str],
+- src/pack/registry.rs: pub parse: ParseFn,
+- src/pack/registry.rs: pub struct PackRegistry {
+- src/pack/registry.rs: pub fn new() -> Self {
+- src/pack/registry.rs: pub fn register(&mut self, entry: PackEntry) {
+- src/pack/registry.rs: pub fn reference() -> Self {
+- src/pack/registry.rs: pub fn get(&self, name: &str) -> Option<&PackEntry> {
+- src/pack/registry.rs: pub fn for_language(&self, language_id: &str) -> Option<&PackEntry> {
+- src/pack/registry.rs: pub fn for_extension(&self, extension: &str) -> Option<&PackEntry> {
+- src/pack/registry.rs: pub fn for_uri(&self, uri: &str) -> Option<&PackEntry> {
+- src/pack/registry.rs: pub fn names(&self) -> Vec<&'static str> {
+- src/pack/registry.rs: pub fn len(&self) -> usize {
+- src/pack/registry.rs: pub fn is_empty(&self) -> bool {
+- src/pack/server.rs: pub const SEMANTIC_TOKEN_TYPES: [&str; 4] = crate::pack::document::SEMANTIC_TOKEN_TYPES;
+- src/pack/server.rs: pub fn capabilities() -> Value {
+- src/pack/server.rs: pub struct PackServer {
+- src/pack/server.rs: pub registry: PackRegistry,
+- src/pack/server.rs: pub documents: BTreeMap<String, Document>,
+- src/pack/server.rs: pub fn new() -> Self {
+- src/pack/server.rs: pub fn with_registry(registry: PackRegistry) -> Self {
+- src/pack/server.rs: pub fn exit_code(&self) -> i32 {
+- src/pack/server.rs: pub fn handle_message(&mut self, body: &[u8]) -> (Option<Value>, Flow) {
+- src/pack/server.rs: pub fn serve(
 - src/rpc.rs: pub const MAX_MESSAGE: usize = 8 * 1024 * 1024;
 - src/rpc.rs: pub const PARSE_ERROR: i64 = -32700;
 - src/rpc.rs: pub const INVALID_REQUEST: i64 = -32600;
@@ -826,8 +928,10 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/server.rs: pub fn new() -> Self {
 - src/server.rs: pub fn exit_code(&self) -> i32 {
 - src/server.rs: pub fn handle_message(&mut self, body: &[u8]) -> (Option<Value>, Flow) {
+- src/transport.rs: pub trait Handler {
 - src/transport.rs: pub const DEFAULT_MAX_MESSAGE: usize = rpc::MAX_MESSAGE;
 - src/transport.rs: pub fn serve(reader: &mut impl BufRead, writer: &mut impl Write, max_message: usize) -> i32 {
+- src/transport.rs: pub fn serve_with(
 
 ## crates/playground-server
 
