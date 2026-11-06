@@ -16,6 +16,8 @@
 //! - `trace <PACK> <FILE>` — per-region recovery events (offset, kind,
 //!   repair ops, resync point) from the pack's reference parser plus,
 //!   for JSON, the shadow-automaton CPCT+ repair loop (issue 029).
+//! - `lsp` — the `.gir` grammar language server over stdio
+//!   (JSON-RPC 2.0, LSP 3.17 subset; issue 041).
 //!
 //! [`run`] is a pure function from arguments to an exit code, so the
 //! integration tests drive it directly.
@@ -76,6 +78,12 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Serve the `.gir` grammar language server over stdio (issue 041).
+    Lsp {
+        /// Bound one framed inbound message at this many bytes.
+        #[arg(long, default_value_t = lsp::transport::DEFAULT_MAX_MESSAGE)]
+        max_message: usize,
+    },
 }
 
 /// Exit codes: 0 ok, 1 negative verdict, 2 usage/IO error.
@@ -107,7 +115,16 @@ where
         Command::Conflicts { grammar } => cmd_conflicts(&grammar),
         Command::Conformance { files } => cmd_conformance(&files),
         Command::Trace { pack, file, json } => cmd_trace(&pack, &file, json),
+        Command::Lsp { max_message } => cmd_lsp(max_message),
     })
+}
+
+/// Serve the grammar language server over stdin/stdout.
+fn cmd_lsp(max_message: usize) -> i32 {
+    use std::io::BufReader;
+    let mut stdin = std::io::stdin().lock();
+    let mut stdout = std::io::stdout().lock();
+    lsp::transport::serve(&mut BufReader::new(&mut stdin), &mut stdout, max_message)
 }
 
 /// Read a file (or stdin for `-`).
@@ -265,4 +282,29 @@ fn cmd_trace(pack: &str, file: &str, json: bool) -> i32 {
 /// Load a grammar from the KDL surface (issue 004 loader).
 fn load_grammar(text: &str) -> Result<Grammar, String> {
     gir_syntax::load_grammar(text).map_err(|error| format!("grammar: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lsp_subcommand_parses_with_the_default_bound() {
+        let cli = Cli::try_parse_from(["syntact", "lsp"]).expect("parses");
+        match cli.command {
+            Command::Lsp { max_message } => {
+                assert_eq!(max_message, lsp::transport::DEFAULT_MAX_MESSAGE);
+            }
+            _ => panic!("expected the lsp subcommand"),
+        }
+    }
+
+    #[test]
+    fn lsp_subcommand_accepts_a_custom_message_bound() {
+        let cli = Cli::try_parse_from(["syntact", "lsp", "--max-message", "4096"]).expect("parses");
+        match cli.command {
+            Command::Lsp { max_message } => assert_eq!(max_message, 4096),
+            _ => panic!("expected the lsp subcommand"),
+        }
+    }
 }
