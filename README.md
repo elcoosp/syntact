@@ -121,6 +121,14 @@ fn main() {
   folding ranges, semantic tokens, and selection ranges for all ten pack languages — LSP 3.17 over stdio,
   std-only, with document open and didChange measured at ~1.1 ms on a ~25 KiB JSON fixture
   (`docs/book/pack-lsp.md`).
+- **Grammars compile to parsers.** `descent-lower` closes the compiler
+  loop: a `.gir` grammar lowers deterministically into the descent
+  descriptors the engine executes — dense kind space, FIRST/FOLLOW
+  LL(1) dispatch guards, transparent-rule inlining, pratt precedence
+  tables — parity-tested against the hand-written JSON pack, with
+  dhat-pinned allocation budgets and a head-to-head criterion suite.
+  Forms the v0 lowering cannot express are named refusals, never
+  silent mis-lowerings.
 - **Budgets that run with the tests.** Criterion benches and dhat allocation-budget tests live in
   `crates/bench` and execute under `cargo test --workspace`; the workspace forbids `unsafe` code and
   enforces `missing_docs` and pedantic clippy at zero warnings.
@@ -141,11 +149,12 @@ are all just sinks over one stream.
 flowchart LR
     GIR["grammar.gir<br/>(KDL surface)"] --> SYNTAX["gir-syntax<br/>KDL loader"]
     SYNTAX --> IR["gir-ir<br/>typed grammar IR"]
+    IR --> LOWER["descent-lower<br/>grammar to descriptors"]
     IR --> LEX["lexgen<br/>regex to NFA to DFA"]
     IR --> SHADOW["lr-shadow<br/>LR(1) shadow automaton"]
     IR --> ANALYSIS["gir-analysis<br/>determinism report"]
     IR --> TRANSFORM["gir-transform<br/>Pratt hints, factoring"]
-    IR --> DESCENT["descent<br/>descent + Pratt backend"]
+    LOWER --> DESCENT["descent<br/>descent + Pratt backend"]
     SHADOW --> RECOVERY["recovery<br/>repair planner"]
     PACKS["packs/*<br/>reference parsers"] --> EVENTS["runtime-core<br/>8-byte event stream"]
     DESCENT --> EVENTS
