@@ -118,6 +118,19 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub fn green_tree(
 - src/lib.rs: pub fn stream_is_balanced(run: &Run, source: &str, root_kind: u16) -> bool {
 
+## crates/descent-lower
+
+- src/lib.rs: pub const JSON_GRAMMAR: &str = include_str!("../fixtures/json.kdl");
+- src/lib.rs: pub enum LowerError {
+- src/lib.rs: pub struct Lowered {
+- src/lib.rs: pub desc: Desc,
+- src/lib.rs: pub kind_of_token: Vec<u16>,
+- src/lib.rs: pub kind_of_rule: Vec<Option<u16>>,
+- src/lib.rs: pub bad_kind: u16,
+- src/lib.rs: pub trivia_kind: Option<u16>,
+- src/lib.rs: pub fn lower(grammar: &Grammar) -> Result<Lowered, LowerError> {
+- src/lib.rs: pub fn feed(&self, scanner: &Scanner, source: &str) -> Vec<(u16, Range<u32>)> {
+
 ## crates/gir-analysis
 
 - src/first_follow.rs: pub struct FirstSet {
