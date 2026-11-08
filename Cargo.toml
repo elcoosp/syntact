@@ -5,6 +5,7 @@ members = [
     "crates/cli",
     "crates/codegen-rust",
     "crates/descent",
+    "crates/descent-lower",
     "crates/gir-analysis",
     "crates/gir-ir",
     "crates/gir-syntax",
@@ -52,6 +53,25 @@ module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 multiple_crate_versions = "allow"
+# Arc<GreenNode>/Arc<NodeCache> event pipelines are single-threaded parser
+# cores by design (rowan-style shared trees); the lint fights the shape.
+arc_with_non_send_sync = "allow"
+# Metric counters and bench timings render as f64; counts stay far below
+# 2^52, so precision loss is display-only.
+cast_precision_loss = "allow"
+# Region offsets and UTF-16 units are u32 by design (issue 032/042); the
+# conversions are bounded by construction.
+cast_possible_truncation = "allow"
+# The IR annotation struct (gir-ir) and the harness gate struct are flat
+# boolean bundles on purpose — each flag is an independent pass datum.
+struct_excessive_bools = "allow"
+# Cohesive state machines and dispatch tables (CLI trace, query compiler,
+# recovery ladder, LSP session stories) read best whole; splitting them
+# would scatter one contract across artificial helpers.
+too_many_lines = "allow"
+# The descent engine threads the sync set through recursion — the sync
+# parameter drives recovery depth, which the lint cannot see.
+only_used_in_recursion = "allow"
 
 [workspace.dependencies]
 # Internal crates (single source of truth for intra-workspace deps)
@@ -68,6 +88,7 @@ harness = { path = "crates/harness" }
 packs-json = { path = "packs/json" }
 cli = { path = "crates/cli" }
 descent = { path = "crates/descent" }
+descent-lower = { path = "crates/descent-lower" }
 incremental = { path = "crates/incremental" }
 query = { path = "crates/query" }
 structural-index = { path = "crates/structural-index" }

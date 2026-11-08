@@ -117,9 +117,12 @@ name = "bench"
 version = "1.0.0"
 dependencies = [
  "criterion",
+ "descent",
+ "descent-lower",
  "dhat",
  "gir-syntax",
  "harness",
+ "lexgen",
  "lsp",
  "packs-c",
  "packs-csv",
@@ -341,6 +344,20 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 name = "descent"
 version = "1.0.0"
 dependencies = [
+ "packs-json",
+ "pretty_assertions",
+ "runtime-core",
+]
+
+[[package]]
+name = "descent-lower"
+version = "1.0.0"
+dependencies = [
+ "descent",
+ "gir-analysis",
+ "gir-ir",
+ "gir-syntax",
+ "lexgen",
  "packs-json",
  "pretty_assertions",
  "runtime-core",
