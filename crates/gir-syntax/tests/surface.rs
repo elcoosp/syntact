@@ -275,13 +275,14 @@ grammar {
     let hint = sum.pratt.expect("explicit hint");
     assert_eq!(hint.left_bp, 10);
     assert_eq!(hint.right_bp, 9);
-    // mul: lbp=20, default left assoc → rbp = 19.
+    // mul: lbp=20, default left assoc → rbp = 21 (the descent engine's
+    // left-assoc encoding: rbp = lbp + 1).
     let mul = grammar
         .rules
         .iter()
         .find(|rule| grammar.interner.lookup(rule.name) == "mul")
         .expect("mul rule");
-    assert_eq!(mul.pratt.map(|hint| hint.right_bp), Some(19));
+    assert_eq!(mul.pratt.map(|hint| hint.right_bp), Some(21));
 }
 
 #[test]
