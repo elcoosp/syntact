@@ -3,3 +3,5 @@ Cargo.lock.bak
 dhat-heap.json
 dhat.json
 *.swp
+/ship.sh
+.github/pr-body.md
