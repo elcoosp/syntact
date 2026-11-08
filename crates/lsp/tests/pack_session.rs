@@ -77,7 +77,6 @@ fn position(text: &str, needle: &str) -> String {
 
 // One scripted narrative: splitting it would hide the protocol
 // sequencing the test exists to pin.
-#[allow(clippy::too_many_lines)]
 #[test]
 fn full_pack_session_lifecycle() {
     let mut client = Client::default();

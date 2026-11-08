@@ -68,7 +68,6 @@ fn main() {
         ranges_t += t4.elapsed().as_nanos();
 
         let input = Source::from_str_unchecked(&source);
-        #[allow(clippy::arc_with_non_send_sync)]
         let cache = Arc::new(NodeCache::new());
         let mut builder = TreeBuilder::with_source(cache, &input);
         builder.attach_trivia_owned(records);
@@ -83,7 +82,6 @@ fn main() {
         std::hint::black_box(&tree);
     }
     let total_n = total.elapsed().as_nanos();
-    #[allow(clippy::cast_precision_loss)] // µs display; u128→f64 truncation is display-only
     let f = |n: u128| format!("{:>9.1} µs", n as f64 / f64::from(ITERS) / 1_000.0);
     println!("lex (parse_events):  {}", f(lex));
     println!("wrap events:         {}", f(wrap));

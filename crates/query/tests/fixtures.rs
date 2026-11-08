@@ -30,8 +30,6 @@ impl KindResolver for JsonKinds {
 /// Token kinds of the JSON pack (leaves).
 mod jt {
     pub const LBRACE: u16 = 8;
-    #[allow(dead_code)] // reserved for closing-brace fixtures
-    pub const RBRACE: u16 = 9;
     pub const COLON: u16 = 12;
     pub const COMMA: u16 = 13;
     pub const STRING: u16 = 3;

@@ -10,7 +10,6 @@ use crate::corpus::Case;
 
 /// The outcome of one case through the runner gates.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(clippy::struct_excessive_bools)] // the gates ARE booleans — each
 // reports one independent conformance property
 pub struct Report {
     /// The case name.

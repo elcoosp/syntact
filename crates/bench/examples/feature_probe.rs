@@ -31,7 +31,6 @@ fn probe(name: &str, src: &str, f: ParseEventsFn) {
     );
 }
 
-#[allow(clippy::too_many_lines)] // one sample per language
 fn main() {
     let py = r#"
 import os

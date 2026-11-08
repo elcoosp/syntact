@@ -68,7 +68,6 @@ pub fn green_tree(
     let input = Source::from_str_unchecked(source);
     // NodeCache is !Sync by design (single-threaded parser core) — the
     // Arc satisfies the builder's shared-ownership signature.
-    #[allow(clippy::arc_with_non_send_sync)]
     let cache = Arc::new(NodeCache::new());
     let mut builder = TreeBuilder::with_source(cache, &input);
     let records: Vec<TriviaRecord> = run

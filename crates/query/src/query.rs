@@ -328,7 +328,6 @@ impl Parser<'_> {
     }
 
     /// `(kind capture? child*)` or `_ capture?`.
-    #[allow(clippy::too_many_lines)] // one pattern grammar
     fn parse_pattern(
         &mut self,
         resolver: &dyn KindResolver,

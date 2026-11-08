@@ -211,7 +211,6 @@ pub struct PrattHint {
 ///
 /// (The annotation set is flat by design — each flag is an independent
 /// pass-facing datum, not a state machine.)
-#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rule {
     /// Dense rule id.
