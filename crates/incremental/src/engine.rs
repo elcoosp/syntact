@@ -215,7 +215,6 @@ impl Engine<'_> {
     /// window tiles and its outer tokens keep their old kinds AND texts
     /// (an adjacent edit that merges into a flank changes its text and
     /// is rejected — the context-hash discipline).
-    #[allow(clippy::too_many_lines)] // one predicate ladder
     fn try_fast_path(
         &self,
         old_source: &str,

@@ -351,7 +351,6 @@ mod tree_tests {
         let second: std::ops::Range<u32> = 3..5;
         let ranges = [first, second];
         let src = Source::from_str_unchecked("abcde");
-        #[allow(clippy::arc_with_non_send_sync)]
         let cache = Arc::new(NodeCache::new());
         let mut builder = TreeBuilder::with_source(cache, &src);
         builder.attach_trivia_records(trivia);
@@ -402,7 +401,6 @@ mod tree_tests {
             Step::Exit,
         ]);
         let src = Source::from_str_unchecked("xy");
-        #[allow(clippy::arc_with_non_send_sync)]
         let cache = Arc::new(NodeCache::new());
         let mut builder = TreeBuilder::with_source(cache, &src);
         drive_sink(&output, &[], &mut builder).expect("drives");
@@ -414,7 +412,6 @@ mod tree_tests {
     fn empty_drive_finishes_with_root_only() {
         let output = pack(&[Step::Enter { kind: 7 }, Step::Exit]);
         let src = Source::from_str_unchecked("");
-        #[allow(clippy::arc_with_non_send_sync)]
         let cache = Arc::new(NodeCache::new());
         let mut builder = TreeBuilder::with_source(cache, &src);
         drive_sink(&output, &[], &mut builder).expect("drives");
@@ -439,7 +436,6 @@ mod tree_tests {
         let err_span: std::ops::Range<u32> = 0..1;
         let error_range = [err_span];
         let src = Source::from_str_unchecked("x");
-        #[allow(clippy::arc_with_non_send_sync)]
         let cache = Arc::new(NodeCache::new());
         let mut builder = TreeBuilder::with_source(cache, &src);
         drive_sink(&output, &error_range, &mut builder).expect("drives");

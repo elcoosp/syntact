@@ -6,7 +6,6 @@
 // Document text is bounded by the input layer's u32 length guard
 // (runtime-core `input::Source`), so usize to u32 casts of outline
 // node indices cannot truncate for any document that parsed at all.
-#![allow(clippy::cast_possible_truncation)]
 
 use std::sync::Arc;
 

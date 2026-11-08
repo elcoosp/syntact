@@ -34,7 +34,6 @@ pub struct MutationStats {
 impl MutationStats {
     /// The repair rate over broken mutations (planned / broken).
     #[must_use]
-    #[allow(clippy::cast_precision_loss)] // metric counts stay far below 2^52
     pub fn repair_rate(&self) -> f64 {
         let broken = self.planned + self.unplanned;
         if broken == 0 {
@@ -46,7 +45,6 @@ impl MutationStats {
 
     /// The determinism rate over planned mutations.
     #[must_use]
-    #[allow(clippy::cast_precision_loss)] // metric counts stay far below 2^52
     pub fn determinism_rate(&self) -> f64 {
         if self.planned == 0 {
             1.0
@@ -57,7 +55,6 @@ impl MutationStats {
 
     /// Mean operations per plan.
     #[must_use]
-    #[allow(clippy::cast_precision_loss)] // metric counts stay far below 2^52
     pub fn mean_ops(&self) -> f64 {
         if self.planned == 0 {
             0.0

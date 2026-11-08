@@ -161,7 +161,7 @@ grammar {
     document kind=seq document-item1 rep node="true"
     document-item1 kind=alt table key_value comment
     table kind=seq "[" bare_key "]" node="true"
-    key_value kind=seq bare_key "=" value node="true" lbp=2 rbp=2 assoc=left
+    key_value kind=seq bare_key "=" value node="true" lbp=2 rbp=3 assoc=left
     value kind=alt string bare_key node="true"
 }
 "##

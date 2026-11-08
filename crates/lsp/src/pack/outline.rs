@@ -14,7 +14,6 @@
 // (runtime-core `input::Source` rejects sources beyond u32::MAX), so
 // usize to u32 casts of in-document offsets and node counts cannot
 // truncate for any document that parsed at all.
-#![allow(clippy::cast_possible_truncation)]
 
 use std::ops::Range;
 use std::sync::Arc;

@@ -241,7 +241,6 @@ fn pack_diags(events: &[Event], ranges: &[(u16, Range<u32>)], source_len: usize)
 ///
 /// Synthetic tokens are recognizable by their empty byte range (the
 /// fixture lexer never emits one).
-#[allow(clippy::too_many_lines)] // one LR state machine reads best whole
 fn automaton_regions(
     source: &str,
     source_len: usize,

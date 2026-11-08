@@ -175,7 +175,6 @@ impl Engine<'_, '_> {
     /// a rule boundary); `Alt`/`Opt`/`Rep` roll back failed attempts —
     /// alternatives whose first item can partially match must therefore
     /// be prefix-disjoint (generated grammars dispatch with [`Pat::Peek`]).
-    #[allow(clippy::only_used_in_recursion)] // the sync set drives recovery depth
     fn pat(&mut self, pat: &Pat, sync: &[u16]) -> bool {
         match pat {
             Pat::Tok(kind) => {

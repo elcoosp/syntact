@@ -17,7 +17,10 @@ gir-syntax.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
+descent.workspace = true
+descent-lower.workspace = true
 dhat.workspace = true
+lexgen.workspace = true
 packs-c.workspace = true
 packs-csv.workspace = true
 packs-ini.workspace = true
@@ -38,6 +41,10 @@ harness = false
 
 [[bench]]
 name = "pack_lsp"
+harness = false
+
+[[bench]]
+name = "lowered_json"
 harness = false
 
 [lints]

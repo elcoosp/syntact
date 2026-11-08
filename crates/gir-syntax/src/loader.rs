@@ -388,8 +388,13 @@ impl<'t> Loader<'t> {
             });
         }
         let assoc = assoc.unwrap_or(gir_ir::Associativity::Left);
+        // The derived right binding power follows the descent engine's
+        // documented infix encoding (`desc::InfixDesc`): left
+        // associativity is `rbp = lbp + 1` (the same-level operator must
+        // not join inside the right operand's climb), right/none is
+        // `rbp = lbp`. An explicit `rbp=` on the surface overrides.
         let right_bp = explicit_rbp.unwrap_or(match assoc {
-            gir_ir::Associativity::Left => lbp - 1,
+            gir_ir::Associativity::Left => lbp.saturating_add(1),
             gir_ir::Associativity::Right | gir_ir::Associativity::None => lbp,
         });
         Ok(Some(gir_ir::PrattHint {

@@ -15,7 +15,6 @@ pub fn scan(source: &str) -> RegionIndex {
 /// The byte-by-byte reference scanner: same regions, naive loop. The
 /// fuzz suite pins the block scanner to this.
 #[must_use]
-#[allow(clippy::too_many_lines)] // the reference is deliberately naive
 pub fn scan_reference(source: &str) -> RegionIndex {
     let bytes = source.as_bytes();
     let mut index = RegionIndex::new();
@@ -164,7 +163,6 @@ impl<'s> Scanner<'s> {
         }
     }
 
-    #[allow(clippy::cast_possible_truncation)] // region offsets fit u32 by design
     fn flush(&mut self, end: usize) {
         if end > self.region_start {
             let kind = self.state.kind();

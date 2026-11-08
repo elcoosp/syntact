@@ -1,0 +1,26 @@
+[package]
+name = "descent-lower"
+description = "Grammar IR → descent descriptor compiler: closes the grammar-to-parser loop (§7.4)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+descent.workspace = true
+gir-analysis.workspace = true
+gir-ir.workspace = true
+lexgen.workspace = true
+
+[dev-dependencies]
+descent.workspace = true
+gir-ir.workspace = true
+gir-syntax.workspace = true
+packs-json.workspace = true
+pretty_assertions.workspace = true
+runtime-core.workspace = true
+
+[lints]
+workspace = true

@@ -430,9 +430,16 @@ fn eval_directed_prec(
             action: Action::Mapped,
             detail: format!("{callee}({parsed}) → pratt hint (assoc {word}, bp {parsed})"),
         });
+        // The engine's infix encoding (`descent::desc::InfixDesc`):
+        // left associativity is rbp = lbp + 1, right/none rbp = lbp.
+        let left_bp = u8::try_from(parsed).unwrap_or(u8::MAX);
+        let right_bp = match assoc {
+            Associativity::Left => left_bp.saturating_add(1),
+            Associativity::Right | Associativity::None => left_bp,
+        };
         eval.pratt = Some(PrattHint {
-            left_bp: u8::try_from(parsed).unwrap_or(u8::MAX),
-            right_bp: u8::try_from(parsed).unwrap_or(u8::MAX),
+            left_bp,
+            right_bp,
             assoc,
         });
     }

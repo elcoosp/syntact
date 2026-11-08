@@ -6,6 +6,40 @@ the [semver policy](docs/semver-policy.md).
 
 ## [Unreleased]
 
+### Compiler loop — descent-lower (issue 043)
+
+- **descent-lower**: the grammar → descriptor compiler — the keystone
+  that closes the pipeline's compiler loop. The front half always
+  *analyzed* grammars and the runtime always *interpreted* descriptors,
+  but nothing connected the two (every pack parser was hand-written).
+  A canonical IR `Grammar` now lowers deterministically into the
+  `descent::Desc` shape: one dense kind space (node rules, node tokens,
+  plain tokens, trivia, unmatched sentinel), transparent-rule inlining
+  (acyclicity-checked), FIRST/FOLLOW-driven LL(1) dispatch guards, and
+  pratt-hinted rules lowered to `PrattDesc` tables whose operator nodes
+  ride the operator token's kind. A trailing `rep(recover)` document
+  sweep keeps arbitrary input byte-faithful. Every canonical form v0
+  cannot express (lookahead predicates, bounded repetitions, transparent
+  cycles, LL(1) conflicts, malformed pratt shapes) is a named refusal —
+  nothing mis-lowers silently. `Lowered::feed` bridges the lexgen
+  scanner to the engine's clean-feed contract.
+- **fix(gir-syntax)**: the derived pratt right binding power followed
+  the wrong encoding (`lbp - 1` for left-associativity); it now derives
+  `rbp = lbp + 1` per the descent engine's documented `InfixDesc`
+  contract. Latent until now — no consumer executed hints end-to-end
+  before descent-lower.
+- **fix(importer)**: `prec.left` hints emitted `rbp = lbp` (the
+  right-associative encoding); converted grammars now carry
+  `rbp = lbp + 1` for left associativity.
+- **bench**: `benches/lowered_json.rs` — the generated pipeline
+  head-to-head against the hand-written reference (scan / parse_events /
+  green_tree per fixture, plus the one-time compile step), and
+  `tests/lowered_budgets.rs` dhat gates (lower ≤ 600 blocks, generated
+  parse ≤ 5× reference on the steady fixture — the engine's per-entry
+  descriptor clones are the known follow-up).
+- **lints**: every `#[allow]`/`#![allow]` moved out of crate sources
+  into justified `[workspace.lints.clippy]` overrides — the source tree
+  is now allow-free (`grep -rnE '#!?\[allow\(' crates/` is empty).
 ### Editor tooling — pack-lsp (issue 042)
 
 - **lsp**: the pack language server (roadmap §12.2 p3d "LSP for

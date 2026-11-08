@@ -1,0 +1,26 @@
+language "json" version="1.0.0" extension="json"
+
+tokens {
+    number  kind=re "-?[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?"
+    string  kind=re "\"(\\\\[^\"\\\\]|[^\"\\\\])*\""
+    lbrace  kind=lit "{"
+    rbrace  kind=lit "}"
+    lbrack  kind=lit "["
+    rbrack  kind=lit "]"
+    colon   kind=lit ":"
+    comma   kind=lit ","
+    true-lit  kind=lit "true"
+    false-lit kind=lit "false"
+    null-lit  kind=lit "null"
+    ws      kind=re "[ \t\r\n]+" trivia="true"
+}
+
+grammar {
+    document   kind=seq value rep
+    value      kind=alt object array string number true-lit false-lit null-lit
+    object     kind=seq lbrace pair-list opt rbrace node="true" reuse="true"
+    pair-list  kind=sep element=pair separator=","
+    pair       kind=seq string colon value node="true"
+    array      kind=seq lbrack value-list opt rbrack node="true"
+    value-list kind=sep element=value separator=","
+}
