@@ -12,7 +12,7 @@
   </p>
   <p>
     <a href="https://github.com/elcoosp/syntact/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/elcoosp/syntact/ci.yml?style=flat-square&label=CI" alt="CI"/></a>
-    <a href="https://github.com/elcoosp/syntact/blob/main/Cargo.toml"><img src="https://img.shields.io/badge/version-1.0.0-3D6CDB?style=flat-square" alt="version 1.0.0"/></a>
+    <a href="https://github.com/elcoosp/syntact/blob/main/Cargo.toml"><img src="https://img.shields.io/badge/version-1.1.0-3D6CDB?style=flat-square" alt="version 1.1.0"/></a>
     <a href="https://github.com/elcoosp/syntact/blob/main/Cargo.toml"><img src="https://img.shields.io/badge/MSRV-1.85-663399?style=flat-square" alt="MSRV 1.85"/></a>
     <a href="https://doc.rust-lang.org/edition-guide/"><img src="https://img.shields.io/badge/rust-edition%202024-DEA584?style=flat-square" alt="Rust edition 2024"/></a>
     <a href="https://github.com/elcoosp/syntact/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/clippy-pedantic%20%7C%20zero%20warnings-8A2BE2?style=flat-square" alt="clippy pedantic, zero warnings"/></a>
@@ -203,7 +203,7 @@ queries, recovery — read [the book](docs/book/SUMMARY.md).
 ## Status
 
 > [!NOTE]
-> The workspace is versioned 1.0.0 with the public API frozen: `docs/api-snapshot.md` is pinned by
+> The workspace is versioned 1.1.0 with the public API frozen: `docs/api-snapshot.md` is pinned by
 > `crates/cli/tests/api_snapshot.rs`, so any added, removed, or retyped `pub` item fails the test suite
 > until the snapshot is consciously regenerated. The crates are not published on crates.io yet — use the
 > git dependencies shown in the Quickstart. The workspace builds on Rust 1.85+ (edition 2024); CI runs
