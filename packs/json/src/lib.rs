@@ -8,6 +8,7 @@
 //! suite subset; byte-faithful on corpus; fuzz-clean on losslessness.
 
 pub mod reference;
+pub mod typed;
 
 /// Node kinds for the JSON grammar (dense, mirrors grammar.kdl ordering).
 pub mod kinds {
