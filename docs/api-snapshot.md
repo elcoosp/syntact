@@ -1114,6 +1114,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub mod persistent;
 - src/lib.rs: pub mod sink;
 - src/lib.rs: pub mod tree;
+- src/lib.rs: pub mod view;
 - src/lib.rs: pub type NodeKind = u16;
 - src/lib.rs: pub type TokenKind = u16;
 - src/lib.rs: pub const ERROR_KIND: NodeKind = u16::MAX - 1;
@@ -1182,6 +1183,17 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/tree.rs: pub fn attach_trivia_records(&mut self, records: &[TriviaRecord]) {
 - src/tree.rs: pub fn attach_trivia_owned(&mut self, records: Vec<TriviaRecord>) {
 - src/tree.rs: pub fn finish(mut self) -> Result<Arc<GreenNode>, String> {
+- src/view/mod.rs: pub mod visit;
+- src/view/mod.rs: pub enum WalkEvent<'t> {
+- src/view/mod.rs: pub struct GreenCursor<'t> {
+- src/view/mod.rs: pub fn new(root: &'t Arc<GreenNode>) -> Self {
+- src/view/mod.rs: pub fn next_event(&mut self) -> Option<WalkEvent<'t>> {
+- src/view/mod.rs: pub fn walk(root: &Arc<GreenNode>) -> impl Iterator<Item = WalkEvent<'_>> + '_ {
+- src/view/mod.rs: pub fn node_span(root: &GreenNode, target: &GreenNode) -> Option<Range<u32>> {
+- src/view/mod.rs: pub fn child_span(node: &GreenNode, n: usize) -> Option<Range<u32>> {
+- src/view/mod.rs: pub trait TreeView<'t> {
+- src/view/visit.rs: pub trait Visitor {
+- src/view/visit.rs: pub fn visit<V: Visitor + ?Sized>(root: &Arc<GreenNode>, visitor: &mut V) -> ControlFlow<()> {
 
 ## crates/structural-index
 
@@ -1359,6 +1371,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 ## packs/json
 
 - src/lib.rs: pub mod reference;
+- src/lib.rs: pub mod typed;
 - src/lib.rs: pub mod kinds {
 - src/lib.rs: pub const OBJECT: u16 = 0;
 - src/lib.rs: pub const ARRAY: u16 = 1;
@@ -1383,6 +1396,21 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/reference.rs: pub fn error_message(diag: u32) -> &'static str {
 - src/reference.rs: pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
 - src/reference.rs: pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
+- src/typed.rs: pub struct Value<'t> {
+- src/typed.rs: pub fn new(root: &'t Arc<GreenNode>, source: &'t Source<'t>) -> Self {
+- src/typed.rs: pub fn value_kind(&self) -> ValueKind {
+- src/typed.rs: pub fn as_object(&self) -> Option<Object<'t>> {
+- src/typed.rs: pub fn as_array(&self) -> Option<Array<'t>> {
+- src/typed.rs: pub fn as_str(&self) -> Option<&'t str> {
+- src/typed.rs: pub fn as_number(&self) -> Option<&'t str> {
+- src/typed.rs: pub fn span(&self) -> Range<u32> {
+- src/typed.rs: pub fn has_error(&self) -> bool {
+- src/typed.rs: pub struct Object<'t> {
+- src/typed.rs: pub fn pairs(&self) -> Vec<(&'t str, Value<'t>)> {
+- src/typed.rs: pub fn keys(&self) -> Vec<&'t str> {
+- src/typed.rs: pub struct Array<'t> {
+- src/typed.rs: pub fn items(&self) -> Vec<Value<'t>> {
+- src/typed.rs: pub enum ValueKind {
 
 ## packs/markdown
 
