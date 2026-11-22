@@ -13,6 +13,9 @@
 //!   [`tree::TreeBuilder`]), byte-faithful rendering, interning.
 //! - [`diagnostic::TokenSet`] + [`diagnostic`] — 192-bit expected sets and the
 //!   diagnostic side table.
+//! - [`view`] — green-tree traversal: a [`view::GreenCursor`] and
+//!   [`view::WalkEvent`] iterator, plus the [`view::TreeView`] trait that
+//!   typed-view packs implement (roadmap §16.C.1 typed-views default).
 
 pub mod diagnostic;
 pub mod events;
@@ -20,6 +23,7 @@ pub mod input;
 pub mod persistent;
 pub mod sink;
 pub mod tree;
+pub mod view;
 
 /// Node kind identifier (pack-local dense numbering; sentinels below).
 pub type NodeKind = u16;
