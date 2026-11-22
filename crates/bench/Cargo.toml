@@ -47,5 +47,9 @@ harness = false
 name = "lowered_json"
 harness = false
 
+[[bench]]
+name = "green_cursor"
+harness = false
+
 [lints]
 workspace = true
