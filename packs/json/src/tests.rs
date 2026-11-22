@@ -228,7 +228,6 @@ fn tree_integration_end_to_end_matrix() {
         wrapped.push(runtime_core::events::Event::Finish);
         let output = process(&wrapped).expect("wrapped stream balances");
         let src = Source::from_str_unchecked(source);
-        #[allow(clippy::arc_with_non_send_sync)]
         let cache = Arc::new(NodeCache::new());
         let mut builder = TreeBuilder::with_source(cache, &src);
         let ranges: Vec<Range<u32>> = tagged.iter().map(|(_, r)| r.clone()).collect();
