@@ -51,7 +51,6 @@ pub fn error_message(diag: u32) -> &'static str {
 /// - **Errors**: `Error` + an ERROR node around the offending region;
 ///   recovery skips to the next `;` / bracket closer and keeps parsing
 ///   — deterministic and lossless.
-#[allow(clippy::type_complexity)]
 #[must_use]
 pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
     let mut parser = Parser::run(source);
@@ -78,7 +77,6 @@ pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
     let input = Source::from_str_unchecked(source);
     // NodeCache is !Sync by design (single-threaded parser core) — the
     // Arc satisfies the builder's shared-ownership signature.
-    #[allow(clippy::arc_with_non_send_sync)]
     let cache = Arc::new(NodeCache::new());
     let mut builder = TreeBuilder::with_source(cache, &input);
     let records: Vec<TriviaRecord> = parser
@@ -1474,7 +1472,6 @@ impl<'s> Parser<'s> {
     }
 
     /// `if` / `while` / `for` / `return` / `break` / `continue` / `throw`.
-    #[allow(clippy::too_many_lines)] // one control-flow dispatcher
     fn parse_control(&mut self) {
         if self.peek_kw("if") {
             self.events.push(Event::Start {
@@ -1967,7 +1964,6 @@ impl<'s> Parser<'s> {
 
     /// The guarded body of [`Self::parse_type_atom`] (depth accounting
     /// lives in the wrapper).
-    #[allow(clippy::too_many_lines)] // one type-atom dispatcher
     fn parse_type_atom_guarded(&mut self) {
         match self.peek() {
             Some(b'{') => {
@@ -2630,7 +2626,6 @@ impl<'s> Parser<'s> {
     /// One atom: names/keywords-as-atoms, numbers, strings, template
     /// literals, parenthesized forms (incl. detected arrows), array and
     /// object literals.
-    #[allow(clippy::too_many_lines)] // one atom dispatcher
     fn parse_atom(&mut self) {
         match self.peek() {
             Some(b) if b.is_ascii_alphabetic() || b == b'_' || b == b'$' => {
