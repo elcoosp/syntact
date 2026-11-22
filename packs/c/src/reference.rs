@@ -37,7 +37,6 @@ pub fn error_message(diag: u32) -> &'static str {
 }
 
 /// Parse C-subset source into the raw event stream.
-#[allow(clippy::type_complexity)]
 #[must_use]
 pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
     let mut parser = Parser::run(source);
@@ -62,7 +61,6 @@ pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
     wrapped.push(Event::Finish);
     let output = events::process(&wrapped)?;
     let input = Source::from_str_unchecked(source);
-    #[allow(clippy::arc_with_non_send_sync)]
     let cache = Arc::new(NodeCache::new());
     let mut builder = TreeBuilder::with_source(cache, &input);
     let records: Vec<TriviaRecord> = parser
@@ -974,7 +972,6 @@ impl<'s> Parser<'s> {
     // Statements
     // ------------------------------------------------------------------
 
-    #[allow(clippy::too_many_lines)]
     fn parse_stmt(&mut self) {
         self.skip_trivia();
         match self.peek() {
@@ -1768,7 +1765,6 @@ impl<'s> Parser<'s> {
 
     /// One atom: literals, names (+ call/index postfix come later),
     /// parenthesised expressions, sizeof(type).
-    #[allow(clippy::too_many_lines)] // one atom dispatcher
     fn parse_atom(&mut self) {
         match self.peek() {
             Some(b) if b.is_ascii_alphabetic() || b == b'_' => {
