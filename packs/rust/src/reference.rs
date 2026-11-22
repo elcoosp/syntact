@@ -39,7 +39,6 @@ pub fn error_message(diag: u32) -> &'static str {
 
 /// Parse Rust-subset source into the raw event stream:
 /// `(events, token_ranges, error_count)`.
-#[allow(clippy::type_complexity)]
 #[must_use]
 pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
     let mut parser = Parser::run(source);
@@ -64,7 +63,6 @@ pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
     wrapped.push(Event::Finish);
     let output = events::process(&wrapped)?;
     let input = Source::from_str_unchecked(source);
-    #[allow(clippy::arc_with_non_send_sync)]
     let cache = Arc::new(NodeCache::new());
     let mut builder = TreeBuilder::with_source(cache, &input);
     let records: Vec<TriviaRecord> = parser
@@ -757,7 +755,6 @@ impl<'s> Parser<'s> {
     }
 
     /// `fn name<Generic>(params) -> Ret where … { body }` or `;`.
-    #[allow(clippy::too_many_lines)]
     fn parse_fn(&mut self) {
         let mark = self.events.len();
         self.events.push(Event::Start {
@@ -1518,7 +1515,6 @@ impl<'s> Parser<'s> {
     /// `if` / `while` / `for` / `loop` / `match` / `return` / `break` /
     /// `continue` — all are expressions in Rust; v0 parses them at
     /// statement level with the same node shapes.
-    #[allow(clippy::too_many_lines)]
     fn parse_control_expr(&mut self) {
         if self.peek_kw("if") {
             self.parse_if();
@@ -2017,12 +2013,10 @@ impl Parser<'_> {
 
     /// A loose pattern grammar: literals, paths, tuples, structs, refs,
     /// slices, ranges, `_`, `mut x @ sub`.
-    #[allow(clippy::too_many_lines)]
     fn parse_pattern(&mut self) {
         self.parse_pattern_bp(0);
     }
 
-    #[allow(clippy::too_many_lines)] // one pattern grammar
     fn parse_pattern_bp(&mut self, min_bp: u8) {
         let mark = self.events.len();
         match self.peek() {
@@ -2655,7 +2649,6 @@ impl Parser<'_> {
     /// One expression atom: literals, paths (+ generic heuristic),
     /// parens/tuples, arrays, struct literals, blocks-as-exprs,
     /// control expressions, macros.
-    #[allow(clippy::too_many_lines)]
     fn parse_atom(&mut self, _allow_struct: bool) {
         match self.peek() {
             Some(b) if b.is_ascii_alphabetic() || b == b'_' => {
