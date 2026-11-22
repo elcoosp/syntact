@@ -5,3 +5,4 @@ dhat.json
 *.swp
 /ship.sh
 .github/pr-body.md
+ship.toml
