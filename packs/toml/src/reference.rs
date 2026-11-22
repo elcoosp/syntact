@@ -48,7 +48,6 @@ pub fn error_message(diag: u32) -> &'static str {
 /// - **Errors**: `Error` + an ERROR node around the offending region;
 ///   recovery skips to the next line start / `]` / `}` / EOF and keeps
 ///   parsing — deterministic and lossless.
-#[allow(clippy::type_complexity)]
 #[must_use]
 pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
     let mut parser = Parser::run(source);
@@ -75,7 +74,6 @@ pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
     let input = Source::from_str_unchecked(source);
     // NodeCache is !Sync by design (single-threaded parser core) — the
     // Arc satisfies the builder's shared-ownership signature.
-    #[allow(clippy::arc_with_non_send_sync)]
     let cache = Arc::new(NodeCache::new());
     let mut builder = TreeBuilder::with_source(cache, &input);
     let records: Vec<TriviaRecord> = parser
