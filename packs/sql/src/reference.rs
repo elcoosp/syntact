@@ -36,7 +36,6 @@ pub fn error_message(diag: u32) -> &'static str {
 }
 
 /// Parse SQL-subset source into the raw event stream.
-#[allow(clippy::type_complexity)]
 #[must_use]
 pub fn parse_events(source: &str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize) {
     let mut parser = Parser::run(source);
@@ -61,7 +60,6 @@ pub fn parse(source: &str) -> Result<Arc<GreenNode>, String> {
     wrapped.push(Event::Finish);
     let output = events::process(&wrapped)?;
     let input = Source::from_str_unchecked(source);
-    #[allow(clippy::arc_with_non_send_sync)]
     let cache = Arc::new(NodeCache::new());
     let mut builder = TreeBuilder::with_source(cache, &input);
     let records: Vec<TriviaRecord> = parser
@@ -519,7 +517,6 @@ impl<'s> Parser<'s> {
 
     /// The per-core tail of a select: items, `FROM` + joins, and the
     /// `WHERE`/`GROUP BY`/`HAVING` clauses.
-    #[allow(clippy::too_many_lines)]
     fn parse_core_tail(&mut self) {
         // Select items.
         loop {
@@ -950,7 +947,6 @@ impl<'s> Parser<'s> {
     }
 
     /// `CREATE TABLE t (col constraints, …)`.
-    #[allow(clippy::too_many_lines)]
     fn parse_create_table(&mut self) {
         self.events.push(Event::Start {
             kind: kinds::CREATE_TABLE,
@@ -1473,7 +1469,6 @@ impl<'s> Parser<'s> {
 
     /// One expression atom: literals, words (with `.` qualification),
     /// function calls, CASE, subqueries, paren groups, `*`.
-    #[allow(clippy::too_many_lines)]
     fn parse_atom(&mut self) {
         match self.peek() {
             Some(b'\'') => self.bump_string(),
@@ -1528,7 +1523,6 @@ impl<'s> Parser<'s> {
 
     /// A word-led expression: CASE, function call, qualified column,
     /// NULL/TRUE/FALSE literals.
-    #[allow(clippy::too_many_lines)]
     fn parse_word_expr(&mut self) {
         let mark = self.events.len();
         // CASE … END.
