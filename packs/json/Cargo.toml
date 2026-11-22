@@ -14,5 +14,8 @@ runtime-core.workspace = true
 [dev-dependencies]
 pretty_assertions.workspace = true
 
+[[example]]
+name = "json_typed_view"
+
 [lints]
 workspace = true
