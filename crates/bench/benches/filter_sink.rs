@@ -2,7 +2,7 @@
 //! [`FilterSink`] wrapping [`StatsSink`] over the packed steady-state
 //! JSON stream — a pass-through gate vs a token-dropping gate, against
 //! the unfiltered `stats_sink/over_drive` baseline (the gate's added
-//! cost per step, paid or saved). Run-fast config — trends only.
+//! cost per step, paid or saved). Criterion defaults — trends only.
 
 use std::ops::Range;
 
