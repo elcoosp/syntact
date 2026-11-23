@@ -6,6 +6,29 @@ the [semver policy](docs/semver-policy.md).
 
 ## [Unreleased]
 
+### Sink statistics + predicate-gated filtering
+
+- **runtime-core**: [`StatsSink`] — the per-kind statistics consumer:
+  node/token histograms, max enter/exit depth, token byte coverage and
+  the totals in one [`StreamStats`] snapshot (the O(kinds) composition
+  counterpart of `ValidationSink`'s O(1) totals); grammar profiling and
+  kind-coverage reports read off the snapshot instead of re-walking the
+  tree. Pinned by fixed-stream, underflow, tee-parity and randomized
+  oracle tests; benchmarked solo and zipped with `ValidationSink`
+  (`bench/benches/stats_sink.rs`).
+- **runtime-core**: [`FilterSink`] + [`FilterStep`] — the predicate-gated
+  forwarding decorator: every step is shown to a
+  `FnMut(&FilterStep) -> bool` gate and only accepted steps reach the
+  inner sink — drop diagnostics by index or restrict a token pass to
+  the kinds a tool cares about, without a second drive. Benchmarked
+  pass-through vs token-dropping (`bench/benches/filter_sink.rs`).
+- **runtime-core**: consumer example `examples/stats_sink.rs` — one
+  drive over a hand-built stream: validation verdict plus per-kind
+  statistics (run `cargo run -p runtime-core --example stats_sink`).
+- **docs**: the §7.2 consumer table (module docs and roadmap) now lists
+  the kind-statistics and step-gated rows alongside the shipped
+  diagnostic-resolution row.
+
 ### Shared pack registry (issue 046)
 
 - **pack-registry**: one canonical registration of the ten packs with
