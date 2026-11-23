@@ -1,6 +1,6 @@
 //! Criterion suite for the pack-registry seam (issue 046): lookup cost
 //! on the three axes, and parse dispatch through an entry vs the direct
-//! pack call (the fn-pointer seam must be free). Run-fast config — the
+//! pack call (the fn-pointer seam must be free). Criterion defaults — the
 //! budgets live in the dhat-counted tests, benches watch trends.
 
 use criterion::{Criterion, criterion_group, criterion_main};
