@@ -80,6 +80,50 @@ fn build_reports_pipeline_stages() {
 }
 
 #[test]
+fn build_with_out_emits_compiling_crate() {
+    // The descent-lower JSON fixture (lowers cleanly through the
+    // codegen-rust descent backend — issue 045).
+    let grammar = temp_file("build_emit.gir", descent_lower::JSON_GRAMMAR);
+    let out_dir = std::env::temp_dir().join(format!(
+        "syntact-build-out-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    let _ = std::fs::remove_dir_all(&out_dir);
+    let code = cli::run([
+        "build",
+        grammar.to_str().expect("path"),
+        "-o",
+        out_dir.to_str().expect("path"),
+    ])
+    .expect("runs");
+    assert_eq!(code, cli::OK, "build -o succeeds");
+    // The emitted crate has the five files the backend promises.
+    for path in [
+        "Cargo.toml",
+        "src/lib.rs",
+        "src/kinds.rs",
+        "src/scanner.rs",
+        "src/parser.rs",
+    ] {
+        let file = out_dir.join(path);
+        let contents = std::fs::read_to_string(&file)
+            .unwrap_or_else(|err| panic!("emitted {path} missing: {err}"));
+        assert!(!contents.is_empty(), "emitted {path} is empty");
+    }
+    // The Cargo.toml carries the safety + lint posture hand-written crates use.
+    let toml = std::fs::read_to_string(out_dir.join("Cargo.toml")).expect("Cargo.toml");
+    assert!(toml.contains("unsafe_code = \"forbid\""));
+    assert!(toml.contains("missing_docs = \"warn\""));
+    assert!(toml.contains("runtime-core"));
+    assert!(toml.contains("lexgen"));
+    let _ = std::fs::remove_dir_all(&out_dir);
+    let _ = std::fs::remove_file(grammar);
+}
+
+#[test]
 fn conflicts_report_deterministic_grammar() {
     let grammar = temp_file("conflicts.gir", JSON_GIR);
     assert_eq!(
