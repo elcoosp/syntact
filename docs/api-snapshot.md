@@ -552,8 +552,20 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub mod diff;
 - src/lib.rs: pub mod edit;
 - src/lib.rs: pub mod engine;
+- src/lib.rs: pub mod tree_diff;
 - src/lib.rs: pub use edit::Edit;
 - src/lib.rs: pub use engine::{
+- src/lib.rs: pub use tree_diff::{DiffVisitor, RangeCollector, SubtreeVerdict, changed_tree_ranges, diff_trees};
+- src/tree_diff.rs: pub enum SubtreeVerdict {
+- src/tree_diff.rs: pub trait DiffVisitor {
+- src/tree_diff.rs: pub struct RangeCollector {
+- src/tree_diff.rs: pub fn new() -> Self {
+- src/tree_diff.rs: pub fn ranges(&self) -> Vec<Range<u32>> {
+- src/tree_diff.rs: pub fn into_ranges(self) -> Vec<Range<u32>> {
+- src/tree_diff.rs: pub fn len(&self) -> usize {
+- src/tree_diff.rs: pub fn is_empty(&self) -> bool {
+- src/tree_diff.rs: pub fn diff_trees(
+- src/tree_diff.rs: pub fn changed_tree_ranges(
 
 ## crates/lexgen
 
@@ -1238,6 +1250,15 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/sink.rs: pub fn inner(&self) -> &S {
 - src/sink.rs: pub fn inner_mut(&mut self) -> &mut S {
 - src/sink.rs: pub fn into_inner(self) -> S {
+- src/sink.rs: pub trait DriveGate {
+- src/sink.rs: pub struct MaxErrors {
+- src/sink.rs: pub fn new(max: u32) -> Self {
+- src/sink.rs: pub fn seen(&self) -> u32 {
+- src/sink.rs: pub fn tripped(&self) -> bool {
+- src/sink.rs: pub struct DriveStats {
+- src/sink.rs: pub forwarded: u32,
+- src/sink.rs: pub stopped_early: bool,
+- src/sink.rs: pub fn drive_sink_until(
 - src/tree.rs: pub enum GreenChild {
 - src/tree.rs: pub fn text_len(&self) -> u32 {
 - src/tree.rs: pub fn has_error(&self) -> bool {
