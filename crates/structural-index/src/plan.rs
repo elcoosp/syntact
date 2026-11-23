@@ -1,7 +1,7 @@
 //! The validate fast path + region-parallel chunk planning (issue 032).
 
 use crate::index::{RegionIndex, RegionKind};
-use crate::scan::scan;
+use crate::sink::FaultScanner;
 
 /// A structural fault found by the validate fast path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,83 +17,17 @@ pub enum StructuralFault {
 }
 
 /// Validate `source` structurally WITHOUT building the region index —
-/// the fast path: one block scan, no allocation beyond the scan state.
-/// Returns the first fault, or `None` when the source is balanced.
+/// the fast path: one streaming block scan into a
+/// [`FaultScanner`], no allocation beyond the O(1) scan state, and the
+/// scan stops at the first fault. Returns the first fault, or `None`
+/// when the source is balanced.
 ///
 /// # Errors
 /// Returns the first [`StructuralFault`] encountered.
 pub fn validate_fast(source: &str) -> Result<(), StructuralFault> {
-    let index = scan(source);
-    validate_from_index(&index, source)
-}
-
-/// The index-driven validator (the fast path shares the scan; this is
-/// the pure classification-to-verdict step).
-fn validate_from_index(index: &RegionIndex, source: &str) -> Result<(), StructuralFault> {
-    let source_len = u32::try_from(source.len()).unwrap_or(u32::MAX);
-    let mut depth: u8 = 0;
-    for (kind, start, end, region_depth) in index.iter() {
-        match kind {
-            RegionKind::Code => {
-                // The region's own depth deltas happened during the scan;
-                // `depths[]` records the entry depth — recompute the exit
-                // depth by counting braces in the region.
-                let clipped_end =
-                    (end as usize).min(usize::try_from(source_len).unwrap_or(usize::MAX));
-                for (offset, byte) in source.as_bytes()[start as usize..clipped_end]
-                    .iter()
-                    .enumerate()
-                {
-                    match byte {
-                        b'{' => depth = depth.saturating_add(1),
-                        b'}' if depth == 0 => {
-                            let at = start as usize + offset;
-                            return Err(StructuralFault::StrayClose(
-                                u32::try_from(at).unwrap_or(0),
-                            ));
-                        }
-                        b'}' => depth = depth.saturating_sub(1),
-                        _ => {}
-                    }
-                }
-            }
-            RegionKind::StrDouble | RegionKind::StrSingle | RegionKind::StrBacktick => {
-                // A string region ends at its closing quote unless it hit
-                // EOF: unterminated when it runs to the very end without
-                // the quote.
-                if end == source_len {
-                    let bytes = source.as_bytes();
-                    let last = bytes.get(end as usize - 1);
-                    if last != Some(&quote_byte(kind)) {
-                        return Err(StructuralFault::UnterminatedString(start));
-                    }
-                }
-            }
-            RegionKind::LineComment => {}
-            RegionKind::BlockComment => {
-                if end == source_len {
-                    let bytes = source.as_bytes();
-                    if bytes.get(end as usize - 1) != Some(&b'/') {
-                        return Err(StructuralFault::UnterminatedComment(start));
-                    }
-                }
-            }
-        }
-        let _ = region_depth;
-    }
-    if depth != 0 {
-        return Err(StructuralFault::UnclosedBraces(depth));
-    }
-    Ok(())
-}
-
-fn quote_byte(kind: RegionKind) -> u8 {
-    match kind {
-        RegionKind::StrDouble => b'"',
-        RegionKind::StrSingle => b'\'',
-        RegionKind::StrBacktick => b'`',
-        _ => 0,
-    }
+    let mut scanner = FaultScanner::new(source);
+    let _ = crate::sink::scan_regions(source, &mut scanner);
+    scanner.finish()
 }
 
 /// One planned chunk: a contiguous, balanced, independently parseable
