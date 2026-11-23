@@ -2,7 +2,7 @@
 //! [`StatsSink`] driven through `drive_sink` over the packed
 //! steady-state JSON stream — solo, and zipped with [`ValidationSink`]
 //! via [`TeeSink`] (the one-pass validate-and-profile composition).
-//! Run-fast config — trends only.
+//! Criterion defaults (the full-parse suites in `json.rs`/`lsp.rs` set the run-fast config).
 
 use std::ops::Range;
 
