@@ -1,0 +1,22 @@
+[package]
+name = "generated-json"
+description = "Generated parser crate from the JSON fixture (codegen-rust descent backend, issue 045) — regenerated on every build by build.rs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+lexgen.workspace = true
+runtime-core.workspace = true
+
+[build-dependencies]
+codegen-rust.workspace = true
+descent-lower.workspace = true
+gir-syntax.workspace = true
+lexgen.workspace = true
+
+[lints]
+workspace = true
