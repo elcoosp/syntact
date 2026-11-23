@@ -17,9 +17,12 @@ gir-syntax.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
+codegen-rust.workspace = true
 descent.workspace = true
 descent-lower.workspace = true
 dhat.workspace = true
+generated-json.workspace = true
+gir-syntax.workspace = true
 lexgen.workspace = true
 packs-c.workspace = true
 packs-csv.workspace = true
@@ -49,6 +52,10 @@ harness = false
 
 [[bench]]
 name = "green_cursor"
+harness = false
+
+[[bench]]
+name = "generated_json"
 harness = false
 
 [lints]
