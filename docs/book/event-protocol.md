@@ -83,8 +83,8 @@ fn hand_built_stream_validates_and_builds() {
     let source = "{}";
     let input = Source::from_str_unchecked(source);
     // NodeCache is !Sync by design (single-threaded parser core); the Arc
-    // only satisfies the builder's shared-ownership signature.
-    #[allow(clippy::arc_with_non_send_sync)]
+    // only satisfies the builder's shared-ownership signature (the
+    // workspace lints already allow this shape).
     let cache = Arc::new(NodeCache::new());
     let mut builder = TreeBuilder::with_source(cache, &input);
     runtime_core::sink::drive_sink(&output, &ranges, &mut builder).expect("drives");
