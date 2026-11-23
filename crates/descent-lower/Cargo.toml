@@ -15,7 +15,6 @@ gir-ir.workspace = true
 lexgen.workspace = true
 
 [dev-dependencies]
-descent.workspace = true
 gir-ir.workspace = true
 gir-syntax.workspace = true
 packs-json.workspace = true
