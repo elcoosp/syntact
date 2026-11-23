@@ -159,3 +159,90 @@ fn bad_usage_is_an_error_not_a_panic() {
     let nothing: [String; 0] = [];
     assert!(cli::run(nothing).is_err());
 }
+
+#[test]
+fn packs_command_lists_every_registered_pack() {
+    assert_eq!(cli::run(["packs"]).expect("runs"), cli::OK);
+}
+
+#[test]
+fn check_routes_documents_by_extension() {
+    let toml = temp_file("route-config.toml", "key = 1\n");
+    assert_eq!(
+        cli::run(["check", toml.to_str().expect("path")]).expect("runs"),
+        cli::OK
+    );
+    let python = temp_file("route-script.py", "x = 1");
+    assert_eq!(
+        cli::run(["check", python.to_str().expect("path")]).expect("runs"),
+        cli::OK
+    );
+    let ini = temp_file("route-app.ini", "[section]\na = 1\nb = 2\n");
+    assert_eq!(
+        cli::run(["check", ini.to_str().expect("path")]).expect("runs"),
+        cli::OK
+    );
+    let broken_toml = temp_file("route-bad.toml", "key = [1, \nother = \n");
+    assert_eq!(
+        cli::run(["check", broken_toml.to_str().expect("path")]).expect("runs"),
+        cli::FAIL
+    );
+    let _ = std::fs::remove_file(toml);
+    let _ = std::fs::remove_file(python);
+    let _ = std::fs::remove_file(ini);
+    let _ = std::fs::remove_file(broken_toml);
+}
+
+#[test]
+fn check_unknown_extension_is_usage_with_pack_hint() {
+    let unknown = temp_file("route-data.xyz", "{\"a\": 1}");
+    assert_eq!(
+        cli::run(["check", unknown.to_str().expect("path")]).expect("runs"),
+        cli::USAGE
+    );
+    let _ = std::fs::remove_file(unknown);
+}
+
+#[test]
+fn check_explicit_pack_overrides_the_extension() {
+    let text = temp_file("route-doc.txt", "{\"a\": 1}");
+    let path = text.to_str().expect("path");
+    // Without `--pack`, an unknown extension refuses.
+    assert_eq!(cli::run(["check", path]).expect("runs"), cli::USAGE);
+    // With `--pack`, the named pack runs regardless of the extension.
+    assert_eq!(
+        cli::run(["check", "--pack", "json", path]).expect("runs"),
+        cli::OK
+    );
+    let python = temp_file("route-doc.py.txt", "x = 1");
+    assert_eq!(
+        cli::run(["check", "--pack", "python", python.to_str().expect("path")]).expect("runs"),
+        cli::OK
+    );
+    // Unknown pack names refuse as usage errors.
+    assert_eq!(
+        cli::run(["check", "--pack", "cobol", path]).expect("runs"),
+        cli::USAGE
+    );
+    let _ = std::fs::remove_file(text);
+    let _ = std::fs::remove_file(python);
+}
+
+#[test]
+fn conformance_gates_any_registered_pack() {
+    let ini = temp_file("conf-good.ini", "[section]\na = 1\nb = 2\n");
+    let path = ini.to_str().expect("path");
+    // Default pack is json: ini content is not JSON, so the gate fails.
+    assert_eq!(cli::run(["conformance", path]).expect("runs"), cli::FAIL);
+    // With `--pack ini`, the same documents pass the same two gates.
+    assert_eq!(
+        cli::run(["conformance", "--pack", "ini", path]).expect("runs"),
+        cli::OK
+    );
+    // Unknown pack names refuse as usage errors.
+    assert_eq!(
+        cli::run(["conformance", "--pack", "cobol", path]).expect("runs"),
+        cli::USAGE
+    );
+    let _ = std::fs::remove_file(ini);
+}
