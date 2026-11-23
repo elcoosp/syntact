@@ -8,8 +8,5 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
-[dependencies]
-simdutf8.workspace = true
-
 [lints]
 workspace = true
