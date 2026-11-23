@@ -118,7 +118,8 @@ fn main() {
   against any pack: `(pair (string) @key (number) @val)` compiles once and matches a packed event stream.
 - **Two language servers, one binary.** `syntact lsp` serves `.gir` grammar authoring (completion, hover,
   rename with stable IDs, conflict squiggles); `syntact pack-lsp` serves diagnostics, document symbols,
-  folding ranges, semantic tokens, and selection ranges for all ten pack languages — LSP 3.17 over stdio,
+  folding ranges, semantic tokens, document highlights, and selection
+  ranges for all ten pack languages — LSP 3.17 over stdio,
   std-only, with document open and didChange measured at ~1.1 ms on a ~25 KiB JSON fixture
   (`docs/book/pack-lsp.md`).
 - **Grammars compile to parsers.** `descent-lower` closes the compiler
@@ -180,7 +181,7 @@ All subcommands run against the real pipeline (`crates/cli/src/lib.rs`); exit co
 | `syntact conflicts <GRAMMAR.gir>` | Determinism report: per-rule backend classification plus every LL(1) conflict site |
 | `syntact conformance <FILES…> [--pack <PACK>]` | Gate `render(parse(x)) == x` over documents through a registered pack (default `json`) |
 | `syntact packs` | List the registered packs: name, language id, extensions |
-| `syntact trace <PACK> <FILE>` | Per-region recovery events (offset, kind, repair ops, resync point) for every registered pack; `--json` for machine-readable output |
+| `syntact trace <PACK> <FILE>` | Per-region recovery events (offset, kind, repair ops, resync point) for every registered pack — repair ops for the JSON pack's LR planner, native recovery regions for the other packs; `--json` for machine-readable output |
 | `syntact lsp` | The `.gir` grammar language server over stdio |
 | `syntact pack-lsp` | The pack language server over stdio for the ten pack languages |
 
