@@ -909,23 +909,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/pack/outline.rs: pub fn root(&self) -> u32 {
 - src/pack/outline.rs: pub fn innermost(&self, offset: usize) -> Option<u32> {
 - src/pack/outline.rs: pub fn chain(&self, index: u32) -> Vec<u32> {
-- src/pack/registry.rs: pub type ParseFn = fn(&str) -> Result<Arc<GreenNode>, String>;
-- src/pack/registry.rs: pub struct PackEntry {
-- src/pack/registry.rs: pub name: &'static str,
-- src/pack/registry.rs: pub language_id: &'static str,
-- src/pack/registry.rs: pub extensions: &'static [&'static str],
-- src/pack/registry.rs: pub parse: ParseFn,
-- src/pack/registry.rs: pub struct PackRegistry {
-- src/pack/registry.rs: pub fn new() -> Self {
-- src/pack/registry.rs: pub fn register(&mut self, entry: PackEntry) {
-- src/pack/registry.rs: pub fn reference() -> Self {
-- src/pack/registry.rs: pub fn get(&self, name: &str) -> Option<&PackEntry> {
-- src/pack/registry.rs: pub fn for_language(&self, language_id: &str) -> Option<&PackEntry> {
-- src/pack/registry.rs: pub fn for_extension(&self, extension: &str) -> Option<&PackEntry> {
-- src/pack/registry.rs: pub fn for_uri(&self, uri: &str) -> Option<&PackEntry> {
-- src/pack/registry.rs: pub fn names(&self) -> Vec<&'static str> {
-- src/pack/registry.rs: pub fn len(&self) -> usize {
-- src/pack/registry.rs: pub fn is_empty(&self) -> bool {
+- src/pack/registry.rs: pub use pack_registry::{PackEntry, PackRegistry, ParseFn};
 - src/pack/server.rs: pub const SEMANTIC_TOKEN_TYPES: [&str; 4] = crate::pack::document::SEMANTIC_TOKEN_TYPES;
 - src/pack/server.rs: pub fn capabilities() -> Value {
 - src/pack/server.rs: pub struct PackServer {
@@ -966,6 +950,31 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/transport.rs: pub fn serve(reader: &mut impl BufRead, writer: &mut impl Write, max_message: usize) -> i32 {
 - src/transport.rs: pub fn serve_with(
 
+## crates/pack-registry
+
+- src/lib.rs: pub type ParseFn = fn(&str) -> Result<Arc<GreenNode>, String>;
+- src/lib.rs: pub type ParseEventsFn = fn(&str) -> (Vec<Event>, Vec<(u16, Range<u32>)>, usize);
+- src/lib.rs: pub type ErrorMessageFn = fn(u32) -> &'static str;
+- src/lib.rs: pub struct PackEntry {
+- src/lib.rs: pub name: &'static str,
+- src/lib.rs: pub language_id: &'static str,
+- src/lib.rs: pub extensions: &'static [&'static str],
+- src/lib.rs: pub parse: ParseFn,
+- src/lib.rs: pub parse_events: ParseEventsFn,
+- src/lib.rs: pub error_message: ErrorMessageFn,
+- src/lib.rs: pub struct PackRegistry {
+- src/lib.rs: pub fn new() -> Self {
+- src/lib.rs: pub fn register(&mut self, entry: PackEntry) {
+- src/lib.rs: pub fn reference() -> Self {
+- src/lib.rs: pub fn get(&self, name: &str) -> Option<&PackEntry> {
+- src/lib.rs: pub fn for_language(&self, language_id: &str) -> Option<&PackEntry> {
+- src/lib.rs: pub fn for_extension(&self, extension: &str) -> Option<&PackEntry> {
+- src/lib.rs: pub fn for_uri(&self, uri: &str) -> Option<&PackEntry> {
+- src/lib.rs: pub fn entries(&self) -> &[PackEntry] {
+- src/lib.rs: pub fn names(&self) -> Vec<&'static str> {
+- src/lib.rs: pub fn len(&self) -> usize {
+- src/lib.rs: pub fn is_empty(&self) -> bool {
+
 ## crates/playground-server
 
 - src/http.rs: pub enum ReqError {
@@ -980,15 +989,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub mod http;
 - src/lib.rs: pub mod wire;
 - src/lib.rs: pub use http::{ReqError, Server, parse_request, serialize_response};
-- src/lib.rs: pub struct PackEntry {
-- src/lib.rs: pub name: &'static str,
-- src/lib.rs: pub parse: fn(&str) -> Result<Arc<GreenNode>, String>,
-- src/lib.rs: pub struct Registry {
-- src/lib.rs: pub fn new() -> Self {
-- src/lib.rs: pub fn register(&mut self, entry: PackEntry) {
-- src/lib.rs: pub fn reference() -> Self {
-- src/lib.rs: pub fn get(&self, name: &str) -> Option<&PackEntry> {
-- src/lib.rs: pub fn names(&self) -> Vec<&str> {
+- src/lib.rs: pub use pack_registry::{PackEntry, PackRegistry as Registry};
 - src/lib.rs: pub enum Method {
 - src/lib.rs: pub struct Request {
 - src/lib.rs: pub method: Method,
