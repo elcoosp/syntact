@@ -2,24 +2,27 @@
 
 A pack is a self-contained parser crate. Its pieces:
 
-- `grammar.kdl` — the grammar in the gir surface (tokens, rules, the
-  separated-list sugar, `@node`/`@reuse` annotations).
-- `reference.rs` — the hand-written parser on the event protocol. It is
-  the differential oracle: generated parsers are conformance-tested
-  against it (issue 021).
-- `kinds` / `token_kinds` — the dense kind numbering shared by events,
-  trees, and queries.
+- `src/lib.rs` — the crate entry (`parse`) with the dense `kinds` /
+  `token_kinds` tables embedded: the pack's grammar is the code itself,
+  not a separate `.kdl` file (the gir surface is for grammar packages —
+  see `syntact build`).
+- `src/reference.rs` — the hand-written parser on the event protocol.
+  It is the differential oracle: generated parsers are conformance-
+  tested against it (issue 021).
 
 ## The contract
 
-A reference parser is judged by three gates (the harness runs them over
-a corpus):
+A reference parser is judged by four gates (the harness runs them over
+the JSON corpus; the other packs enforce the same gates in their own
+test suites):
 
 1. **Losslessness** — `render(parse(x)) == x` for every corpus
    document, recovery included.
 2. **Determinism** — same input, same tree, always.
 3. **Recovery discipline** — every syntax error is followed by an
    `ERROR_KIND` node, and parsing continues at the next sync token.
+4. **Event balance** — the wrapped stream validates through
+   `events::process` (no exit underflow, no unclosed enter).
 
 The recipe from [getting started](getting-started.md) exercises gate 1
 end to end:
