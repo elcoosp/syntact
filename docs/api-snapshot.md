@@ -1203,6 +1203,11 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/sink.rs: pub nodes: Vec<SkeletonNode>,
 - src/sink.rs: pub struct TokenSink {
 - src/sink.rs: pub tokens: Vec<(crate::TokenKind, Range<u32>)>,
+- src/sink.rs: pub struct DiagCollector<'t> {
+- src/sink.rs: pub fn new(table: &'t DiagTable) -> Self {
+- src/sink.rs: pub fn diagnostics(&self) -> &[crate::diagnostic::Diagnostic] {
+- src/sink.rs: pub fn into_diagnostics(self) -> Vec<crate::diagnostic::Diagnostic> {
+- src/sink.rs: pub fn unresolved(&self) -> usize {
 - src/sink.rs: pub struct TeeSink<A, B> {
 - src/sink.rs: pub first: A,
 - src/sink.rs: pub second: B,
@@ -1240,6 +1245,19 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 
 ## crates/structural-index
 
+- src/chunks.rs: pub struct ChunkFault {
+- src/chunks.rs: pub chunk: usize,
+- src/chunks.rs: pub fault: StructuralFault,
+- src/chunks.rs: pub struct ChunkReport {
+- src/chunks.rs: pub chunks: usize,
+- src/chunks.rs: pub faults: Vec<ChunkFault>,
+- src/chunks.rs: pub fn is_clean(&self) -> bool {
+- src/chunks.rs: pub fn first_fault(&self) -> Option<ChunkFault> {
+- src/chunks.rs: pub trait ChunkValidator {
+- src/chunks.rs: pub struct ChunkFaultScanner;
+- src/chunks.rs: pub fn validate_chunks_with(
+- src/chunks.rs: pub fn validate_chunks(source: &str, plan: &[ChunkPlan]) -> ChunkReport {
+- src/chunks.rs: pub fn validate_plan(source: &str, index: &RegionIndex, target: usize) -> ChunkReport {
 - src/index.rs: pub enum RegionKind {
 - src/index.rs: pub fn from_u8(byte: u8) -> Self {
 - src/index.rs: pub struct RegionIndex {
@@ -1255,10 +1273,12 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/index.rs: pub fn iter(&self) -> impl Iterator<Item = (RegionKind, u32, u32, u8)> + '_ {
 - src/index.rs: pub fn depth_at(&self, offset: u32) -> u8 {
 - src/index.rs: pub fn bytes_per_region(&self) -> usize {
+- src/lib.rs: pub mod chunks;
 - src/lib.rs: pub mod index;
 - src/lib.rs: pub mod plan;
 - src/lib.rs: pub mod scan;
 - src/lib.rs: pub mod sink;
+- src/lib.rs: pub use chunks::{
 - src/lib.rs: pub use index::{RegionIndex, RegionKind};
 - src/lib.rs: pub use plan::{ChunkPlan, StructuralFault, plan_chunks, validate_fast};
 - src/lib.rs: pub use scan::{scan, scan_reference};
