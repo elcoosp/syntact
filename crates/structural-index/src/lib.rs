@@ -24,6 +24,10 @@
 //!   block scan without building the index and reports the first
 //!   structural fault (unterminated quote/comment, unbalanced brace)
 //!   with its offset.
+//! - **Region sink seam**: [`sink::RegionSink`] consumes regions as
+//!   they close ([`sink::scan_regions`], `ControlFlow` early exit);
+//!   [`sink::FaultScanner`] is the built-in streaming, fail-fast
+//!   validator behind [`plan::validate_fast`].
 //! - **Chunk planning**: [`plan::plan_chunks`] cuts the source into
 //!   contiguous, balanced, deterministic chunks whose boundaries sit at
 //!   depth-0 code positions — each chunk is independently parseable.
@@ -31,7 +35,9 @@
 pub mod index;
 pub mod plan;
 pub mod scan;
+pub mod sink;
 
 pub use index::{RegionIndex, RegionKind};
 pub use plan::{ChunkPlan, StructuralFault, plan_chunks, validate_fast};
 pub use scan::{scan, scan_reference};
+pub use sink::{FaultScanner, RegionSink, scan_regions};
