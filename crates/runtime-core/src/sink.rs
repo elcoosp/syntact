@@ -13,9 +13,10 @@
 //! | streaming query matcher | the query crate's `QuerySink` — patterns run as the stream drives, zipped with tree-side sinks via [`TeeSink`] |
 //! | diagnostic resolution | [`DiagCollector`] — deferred indexes resolved to owned messages via the side table |
 //! | step-gated consumer | [`FilterSink`] — predicate decides which steps reach the inner sink |
+//! | step-gated early exit | [`DriveGate`] + [`drive_sink_until`] — the gate halts the drive before a rejected step reaches the sink ([`MaxErrors`] is the error-budget gate) |
 //! | incremental engine | splices `ReusedSubtree` records, then this trait (§7.7, Phase 3) |
 
-use std::ops::Range;
+use std::ops::{ControlFlow, Range};
 
 use crate::diagnostic::DiagTable;
 use crate::events::Output;
@@ -52,7 +53,9 @@ pub trait Sink {
 /// zero-width ranges at the running cursor, and malformed enter/exit
 /// sequences are left to the sinks' own balance checks (see
 /// [`ValidationSink::balanced`]). The `Result` reserves the failure
-/// channel for a stricter driver contract.
+/// channel for a stricter driver contract — [`drive_sink_until`] is
+/// that contract's gated form (early exit + accounting, no `Result`
+/// needed either).
 pub fn drive_sink(
     output: &Output,
     ranges: &[Range<u32>],
@@ -667,16 +670,183 @@ where
     }
 }
 
+/// The gated driver's decision point: sees every step BEFORE the sink
+/// and may halt the drive — the stream-side analogue of the
+/// `ControlFlow` convention on `structural_index::RegionSink` and
+/// `view::visit::Visitor`, and the strict contract the
+/// [`drive_sink`] docs reserve their failure channel for.
+///
+/// Implement this trait for a stateful gate (see [`MaxErrors`]), or use
+/// the blanket impl for `FnMut(&FilterStep<'_>) -> ControlFlow<()>`
+/// closures. [`FilterSink`] shapes what a sink receives; a
+/// [`DriveGate`] decides whether the drive continues at all.
+pub trait DriveGate {
+    /// Inspect one step before it reaches the sink.
+    /// [`ControlFlow::Break`] halts the drive immediately — the step is
+    /// NOT delivered to the sink.
+    fn step(&mut self, step: &FilterStep<'_>) -> ControlFlow<()>;
+}
+
+impl<F> DriveGate for F
+where
+    F: FnMut(&FilterStep<'_>) -> ControlFlow<()>,
+{
+    fn step(&mut self, step: &FilterStep<'_>) -> ControlFlow<()> {
+        self(step)
+    }
+}
+
+/// The error-budget gate: lets the first `max` deferred diagnostics
+/// through and halts the drive on the one that exceeds the budget —
+/// the fail-fast half of the §7.2 many-consumers-over-one-stream
+/// contract (editors stop at the first N faults instead of draining a
+/// stream that keeps erroring).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MaxErrors {
+    /// The diagnostic budget.
+    max: u32,
+    /// Error steps seen so far (delivered or not).
+    seen: u32,
+}
+
+impl MaxErrors {
+    /// A gate with `max` diagnostic slots.
+    #[must_use]
+    pub fn new(max: u32) -> Self {
+        Self { max, seen: 0 }
+    }
+
+    /// Error steps seen so far, including the one that tripped the gate.
+    #[must_use]
+    pub fn seen(&self) -> u32 {
+        self.seen
+    }
+
+    /// Whether the budget was exceeded (the drive halted early).
+    #[must_use]
+    pub fn tripped(&self) -> bool {
+        self.seen > self.max
+    }
+}
+
+impl DriveGate for MaxErrors {
+    fn step(&mut self, step: &FilterStep<'_>) -> ControlFlow<()> {
+        if matches!(step, FilterStep::Error { .. }) {
+            self.seen = self.seen.saturating_add(1);
+            if self.seen > self.max {
+                return ControlFlow::Break(());
+            }
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// Accounting record of one gated drive (the observability convention:
+/// plain copyable counters, like `ValidationSummary`/`StreamStats`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DriveStats {
+    /// Steps forwarded to the sink before any halt.
+    pub forwarded: u32,
+    /// Whether a gate `Break` halted the drive before the stream ended.
+    pub stopped_early: bool,
+}
+
+/// Drive `sink` over a flattened [`Output`] behind a [`DriveGate`]:
+/// every step is shown to the gate first, a gate `Break` halts the
+/// drive immediately (the rejected step never reaches the sink), and
+/// the run returns [`DriveStats`] instead of nothing — the strict
+/// driver contract [`drive_sink`] reserves its failure channel for.
+///
+/// Everything else is [`drive_sink`]: packed words decode inline
+/// (bit-exact with [`crate::events::Output::unpack_word`]), and token
+/// steps take their ranges from `ranges` (zero-width at the running
+/// cursor when the table runs short).
+#[must_use]
+pub fn drive_sink_until(
+    output: &Output,
+    ranges: &[Range<u32>],
+    gate: &mut dyn DriveGate,
+    sink: &mut dyn Sink,
+) -> DriveStats {
+    let mut range_idx = 0usize;
+    let mut cursor = 0u32;
+    let mut forwarded = 0u32;
+    for &word in &output.stream {
+        match word & 0xF {
+            crate::events::TAG_ENTER => {
+                let kind = u16::try_from(word >> 4).unwrap_or(u16::MAX);
+                if gate.step(&FilterStep::Enter { kind }).is_break() {
+                    return DriveStats {
+                        forwarded,
+                        stopped_early: true,
+                    };
+                }
+                sink.enter(kind);
+            }
+            crate::events::TAG_EXIT => {
+                if gate.step(&FilterStep::Exit).is_break() {
+                    return DriveStats {
+                        forwarded,
+                        stopped_early: true,
+                    };
+                }
+                sink.exit();
+            }
+            crate::events::TAG_TOKEN => {
+                let kind = u16::try_from((word >> 12) & 0xFFFF).unwrap_or(u16::MAX);
+                let n_raw = u8::try_from((word >> 4) & 0xFF).unwrap_or(0);
+                // Callers without a range table (validate-mode consumers,
+                // property tests) get synthesized zero-length ranges at
+                // the running cursor; real token sources supply full ranges.
+                let range = match ranges.get(range_idx) {
+                    Some(r) => r.clone(),
+                    None => cursor..cursor,
+                };
+                cursor = range.end;
+                let step = FilterStep::Token {
+                    kind,
+                    range: &range,
+                    n_raw,
+                };
+                if gate.step(&step).is_break() {
+                    return DriveStats {
+                        forwarded,
+                        stopped_early: true,
+                    };
+                }
+                sink.token(kind, range, n_raw);
+                range_idx += 1;
+            }
+            // TAG_ERROR and the zero word both decode as Error (the same
+            // contract `unpack_word` implements).
+            _ => {
+                let diag = u32::try_from(word >> 4).unwrap_or(u32::MAX);
+                if gate.step(&FilterStep::Error { diag }).is_break() {
+                    return DriveStats {
+                        forwarded,
+                        stopped_early: true,
+                    };
+                }
+                sink.error(diag);
+            }
+        }
+        forwarded = forwarded.saturating_add(1);
+    }
+    DriveStats {
+        forwarded,
+        stopped_early: false,
+    }
+}
+
 #[cfg(test)]
 mod sink_tests {
-    use std::ops::Range;
+    use std::ops::{ControlFlow, Range};
 
     use super::{
-        DiagCollector, FilterSink, FilterStep, SkeletonSink, StatsSink, TeeSink, TokenSink,
-        ValidationSink,
+        DiagCollector, DriveStats, FilterSink, FilterStep, MaxErrors, SkeletonSink, StatsSink,
+        TeeSink, TokenSink, ValidationSink, drive_sink, drive_sink_until,
     };
     use crate::events::{Output, Step};
-    use crate::sink::drive_sink;
 
     // ---- fixed-stream helpers ----
 
@@ -1343,5 +1513,137 @@ mod sink_tests {
                 "the gate forwards exactly the even-kind tokens"
             );
         }
+    }
+
+    // ---- gated drives (drive_sink_until, DriveGate, MaxErrors) ----
+
+    /// The fixed malformed stream: `10 { tok 1 err tok err }` over a
+    /// 5-byte source — two deferred diagnostics inside one node.
+    fn malformed() -> Output {
+        pack(&[
+            Step::Enter { kind: 10 },
+            Step::Token { kind: 1, n_raw: 1 },
+            Step::Error { diag: 0 },
+            Step::Token { kind: 2, n_raw: 1 },
+            Step::Error { diag: 1 },
+            Step::Exit,
+        ])
+    }
+
+    const MALFORMED_RANGES: [Range<u32>; 2] = [0..2, 3..5];
+
+    #[test]
+    fn pass_through_gate_parity_with_drive_sink() {
+        let output = malformed();
+        let mut plain = ValidationSink::default();
+        drive_sink(&output, &MALFORMED_RANGES, &mut plain).expect("drives");
+        let mut gated = ValidationSink::default();
+        let mut gate = |_: &FilterStep<'_>| ControlFlow::<()>::Continue(());
+        let stats = drive_sink_until(&output, &MALFORMED_RANGES, &mut gate, &mut gated);
+        assert_eq!(plain.summary(), gated.summary(), "parity with drive_sink");
+        assert_eq!(gated.errors, 2);
+        assert_eq!(stats.forwarded, 6, "every step forwarded");
+        assert!(!stats.stopped_early, "a Continue gate never halts");
+    }
+
+    #[test]
+    fn gate_halts_before_the_rejected_step() {
+        let output = malformed();
+        let mut sink = ValidationSink::default();
+        let mut gate = |step: &FilterStep<'_>| {
+            if matches!(step, FilterStep::Error { .. }) {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        };
+        let stats = drive_sink_until(&output, &MALFORMED_RANGES, &mut gate, &mut sink);
+        assert_eq!(stats.forwarded, 2, "enter + first token, then the halt");
+        assert!(stats.stopped_early);
+        assert_eq!(sink.errors, 0, "the rejected step never reached the sink");
+        assert_eq!(sink.tokens, 1);
+    }
+
+    #[test]
+    fn max_errors_trips_at_the_budget() {
+        let output = malformed();
+        let mut sink = ValidationSink::default();
+        let mut gate = MaxErrors::new(1);
+        let stats = drive_sink_until(&output, &MALFORMED_RANGES, &mut gate, &mut sink);
+        // enter, token, error #1 (delivered), token, error #2 → halt.
+        assert_eq!(stats.forwarded, 4);
+        assert!(stats.stopped_early);
+        assert_eq!(sink.errors, 1);
+        assert!(gate.tripped(), "the budget was exceeded");
+        assert_eq!(gate.seen(), 2);
+    }
+
+    #[test]
+    fn max_errors_zero_budget_stops_before_any_error() {
+        let output = malformed();
+        let mut sink = ValidationSink::default();
+        let mut gate = MaxErrors::new(0);
+        let stats = drive_sink_until(&output, &MALFORMED_RANGES, &mut gate, &mut sink);
+        assert_eq!(stats.forwarded, 2);
+        assert!(stats.stopped_early);
+        assert_eq!(sink.errors, 0, "no diagnostic got through");
+    }
+
+    #[test]
+    fn max_errors_under_budget_drives_everything() {
+        let output = malformed();
+        let mut plain = ValidationSink::default();
+        drive_sink(&output, &MALFORMED_RANGES, &mut plain).expect("drives");
+        let mut gated = ValidationSink::default();
+        let mut gate = MaxErrors::new(2);
+        let stats = drive_sink_until(&output, &MALFORMED_RANGES, &mut gate, &mut gated);
+        assert_eq!(plain.summary(), gated.summary());
+        assert_eq!(stats.forwarded, 6);
+        assert!(!stats.stopped_early);
+        assert!(!gate.tripped());
+    }
+
+    #[test]
+    fn trip_at_k_equals_driving_the_truncated_stream() {
+        // Differential: halting after exactly k forwards must leave the
+        // sink in the same state as driving only the first k packed words.
+        let output = malformed();
+        let total = output.stream.len();
+        for k in 0..=total {
+            let mut gated = ValidationSink::default();
+            let mut seen = 0u32;
+            let mut gate = |_: &FilterStep<'_>| {
+                if seen >= u32::try_from(k).unwrap_or(u32::MAX) {
+                    ControlFlow::Break(())
+                } else {
+                    seen += 1;
+                    ControlFlow::Continue(())
+                }
+            };
+            let stats = drive_sink_until(&output, &MALFORMED_RANGES, &mut gate, &mut gated);
+            let truncated = Output {
+                stream: output.stream[..k].to_vec(),
+            };
+            let mut plain = ValidationSink::default();
+            drive_sink(&truncated, &MALFORMED_RANGES, &mut plain).expect("drives");
+            assert_eq!(
+                stats.forwarded,
+                u32::try_from(k).unwrap_or(u32::MAX),
+                "k={k}"
+            );
+            assert_eq!(stats.stopped_early, k < total, "k={k}");
+            assert_eq!(plain.summary(), gated.summary(), "k={k}");
+        }
+    }
+
+    #[test]
+    fn gated_stats_snapshot_is_copyable() {
+        let stats = DriveStats {
+            forwarded: 3,
+            stopped_early: true,
+        };
+        let copy = stats;
+        assert_eq!(copy, stats);
+        assert_eq!(copy.forwarded, 3);
     }
 }
