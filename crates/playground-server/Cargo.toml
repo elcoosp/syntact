@@ -1,6 +1,6 @@
 [package]
 name = "playground-server"
-description = "playground-server:HTTP parse service (issue 038)"
+description = "playground-server:HTTP parse service (issue 038; every shipped pack via the shared registry, issue 046)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,13 +10,7 @@ authors.workspace = true
 
 [dependencies]
 runtime-core.workspace = true
-packs-json.workspace = true
-packs-toml.workspace = true
-packs-python.workspace = true
-packs-typescript.workspace = true
-packs-rust.workspace = true
-packs-c.workspace = true
-packs-sql.workspace = true
+pack-registry.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true
