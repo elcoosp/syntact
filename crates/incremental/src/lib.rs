@@ -2,7 +2,7 @@
 //!
 //! Token-stream reuse over the packs' lexers: edit normalization, a
 //! single-token relex fast path with margin-based safety predicates
-//! ([`engine::ContextHash`], window tiling, flank-kind agreement),
+//! (window tiling, flank-kind + flank-text agreement),
 //! changed-ranges diffing, and seeded incremental-equivalence fuzzing
 //! (`reparse(edit(x)) == fresh_parse(x)` at the token-stream level).
 //!
