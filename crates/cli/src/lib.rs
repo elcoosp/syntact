@@ -5,10 +5,11 @@
 //!
 //! - `check <GRAMMAR.gir | DOCUMENT.json>` — grammar validation (KDL →
 //!   IR) or a document parse check through the JSON pack.
-//! - `build <GRAMMAR.gir>` — compile the front half of the pipeline:
-//!   KDL → IR, lexer compilation (regex → NFA → DFA) and the LR(1) shadow
-//!   automaton; prints the per-stage stats a codegen backend would
-//!   consume (Rust table emission is issue 015).
+//! - `build <GRAMMAR.gir> [-o <DIR>]` — compile the front half of the
+//!   pipeline (KDL → IR, lexer compilation, LR(1) shadow automaton) and
+//!   print the per-stage stats; with `-o <DIR>`, emit a standalone,
+//!   compiling Rust parser crate (the codegen-rust descent backend,
+//!   issue 045 / roadmap §6.1 pass 12 / §12.3 P0 "compiling crate" row).
 //! - `conflicts <GRAMMAR.gir>` — the determinism report: per-rule
 //!   backend classification plus every LL(1) conflict site.
 //! - `conformance <FILES…>` — run the JSON pack over documents and gate
@@ -51,11 +52,18 @@ pub enum Command {
         file: String,
     },
     /// Compile a grammar through the pipeline front half (loader, lexer,
-    /// shadow automaton) and report the stats.
+    /// shadow automaton) and report the stats — or, with `-o <DIR>`, emit
+    /// a standalone compiling Rust parser crate (the codegen-rust descent
+    /// backend, issue 045 / roadmap §6.1 pass 12 / §12.3 P0 "compiling
+    /// crate" row).
     Build {
         /// The .gir grammar file.
         #[arg(value_name = "GRAMMAR")]
         grammar: String,
+        /// Emit the generated parser crate into this directory (created if
+        /// missing). When omitted, the front-half stats are printed instead.
+        #[arg(short = 'o', long = "out", value_name = "DIR")]
+        out: Option<String>,
     },
     /// Print the determinism report: per-rule backends + conflict sites.
     Conflicts {
@@ -120,7 +128,7 @@ where
     .map_err(|error| error.to_string())?;
     Ok(match cli.command {
         Command::Check { file } => cmd_check(&file),
-        Command::Build { grammar } => cmd_build(&grammar),
+        Command::Build { grammar, out } => cmd_build(&grammar, out.as_deref()),
         Command::Conflicts { grammar } => cmd_conflicts(&grammar),
         Command::Conformance { files } => cmd_conformance(&files),
         Command::Trace { pack, file, json } => cmd_trace(&pack, &file, json),
@@ -195,7 +203,7 @@ fn cmd_check(file: &str) -> i32 {
     }
 }
 
-fn cmd_build(grammar_path: &str) -> i32 {
+fn cmd_build(grammar_path: &str, out: Option<&str>) -> i32 {
     let Ok(text) = read_input(grammar_path) else {
         return USAGE;
     };
@@ -210,6 +218,57 @@ fn cmd_build(grammar_path: &str) -> i32 {
     let automaton = lr_shadow::Automaton::build(&grammar);
     // Stage 4: determinism classification.
     let report = gir_analysis::DeterminismReport::compute(&grammar);
+
+    // When `-o <DIR>` is given, emit the compiling parser crate (issue 045,
+    // roadmap §6.1 pass 12 / §12.3 P0 "compiling crate" row). Lowering
+    // refusals surface as named FAIL diagnostics — the compiler never
+    // silently skips emission.
+    if let Some(out_dir) = out {
+        let lowered = match descent_lower::lower(&grammar) {
+            Ok(lowered) => lowered,
+            Err(error) => {
+                eprintln!("lowering refused: {error}");
+                return FAIL;
+            }
+        };
+        let crate_ =
+            match codegen_rust::emit_crate(&lowered, &scanner, &grammar.name, &grammar.version) {
+                Ok(crate_) => crate_,
+                Err(error) => {
+                    eprintln!("emission refused: {error}");
+                    return FAIL;
+                }
+            };
+        let root = std::path::Path::new(out_dir);
+        if let Err(error) = std::fs::create_dir_all(root) {
+            eprintln!("{out_dir}: {error}");
+            return USAGE;
+        }
+        for file in &crate_.files {
+            let path = root.join(&file.path);
+            if let Some(parent) = path.parent() {
+                if let Err(error) = std::fs::create_dir_all(parent) {
+                    eprintln!("{}: {error}", path.display());
+                    return USAGE;
+                }
+            }
+            if let Err(error) = std::fs::write(&path, &file.contents) {
+                eprintln!("{}: {error}", path.display());
+                return USAGE;
+            }
+        }
+        println!(
+            "emitted `{}` v{} → {} ({} files, crate `{}`)",
+            grammar.name,
+            grammar.version,
+            root.display(),
+            crate_.files.len(),
+            crate_.name,
+        );
+        return OK;
+    }
+
+    // No `-o`: keep today's stats output (the front-half summary).
     println!(
         "grammar `{}`: {} tokens, {} rules",
         grammar.name,
