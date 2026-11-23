@@ -43,10 +43,16 @@ pub struct ChunkPlan {
     pub depth: u8,
 }
 
-/// Plan `target` contiguous chunks whose boundaries all sit at depth-0
-/// code positions (never inside a string or comment) — each chunk is
-/// safe to parse in parallel. Deterministic: boundaries are the
-/// depth-0 code-region starts nearest the even split points.
+/// Plan `target` contiguous chunks whose boundaries all sit at true
+/// depth-0 code positions (never inside a string or comment, never at
+/// a nonzero brace depth) — each chunk is balanced and safe to parse
+/// in parallel. Deterministic: boundaries are the depth-0 code-region
+/// starts nearest the even split points.
+///
+/// The depth a boundary sits at is the PREVIOUS region's end depth,
+/// not the region's own record: the index records the depth at each
+/// region's end (braces do not split Code regions), so a region like
+/// ` } x` records 0 while the position it starts at is at depth 1.
 ///
 /// # Panics
 /// Never: the boundary list is seeded with `0`, so `last()` always
@@ -58,14 +64,20 @@ pub fn plan_chunks(source: &str, index: &RegionIndex, target: usize) -> Vec<Chun
         return Vec::new();
     }
     let target = target.max(1);
-    // Candidate boundaries: 0, len, and every depth-0 CODE region start
-    // (those are provably outside strings/comments and at depth 0).
+    // Candidate boundaries: 0, len, and every Code region START whose
+    // actual brace depth is 0 (those are provably outside
+    // strings/comments and at depth 0). The actual depth at a region
+    // start is the previous record's depth — depth only changes inside
+    // Code regions, so each record's depth is the next region's
+    // starting depth.
     let mut candidates: Vec<u32> = Vec::new();
     candidates.push(0);
+    let mut prev_depth: u8 = 0;
     for (kind, start, _end, depth) in index.iter() {
-        if kind == RegionKind::Code && depth == 0 && start > 0 && start < len {
+        if kind == RegionKind::Code && prev_depth == 0 && start > 0 && start < len {
             candidates.push(start);
         }
+        prev_depth = depth;
     }
     candidates.push(len);
     candidates.sort_unstable();
@@ -148,6 +160,9 @@ mod tests {
         }
         for plan in &plans {
             assert_eq!(plan.depth, 0, "every chunk starts at depth 0");
+            // True balance: the chunk's own bytes validate clean.
+            let bytes = &source[plan.start as usize..plan.end as usize];
+            assert_eq!(validate_fast(bytes), Ok(()), "chunk {plan:?} unbalanced");
             // No chunk boundary falls inside a string/comment region.
             for (kind, start, end, _depth) in index.iter() {
                 if kind != crate::RegionKind::Code {
@@ -156,6 +171,27 @@ mod tests {
                         "region {start}..{end} not contained in chunk {plan:?}"
                     );
                 }
+            }
+        }
+    }
+
+    /// The trap the candidate filter must avoid: the ` } x` region
+    /// records depth 0 (its end depth) while the position it starts at
+    /// sits at depth 1 — a boundary there would cut `{ "s" ` into an
+    /// unbalanced chunk. Pinned by `tests/chunks.rs` too; this is the
+    /// module-local smallest repro.
+    #[test]
+    fn boundaries_use_the_boundary_depth_not_the_region_record() {
+        let source = "{ \"s\" } x";
+        let index = scan(source);
+        for target in [1, 2, 3, 4] {
+            for plan in plan_chunks(source, &index, target) {
+                let bytes = &source[plan.start as usize..plan.end as usize];
+                assert_eq!(
+                    validate_fast(bytes),
+                    Ok(()),
+                    "chunk {plan:?} of {source:?} (target {target}) is not balanced"
+                );
             }
         }
     }
