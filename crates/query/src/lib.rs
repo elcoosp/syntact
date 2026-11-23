@@ -41,9 +41,11 @@
 
 pub mod cursor;
 pub mod query;
+pub mod sink;
 
 pub use cursor::{Capture, Match, PredicateArg, PredicateFn, QueryCursor};
 pub use query::{
     ChildStep, CompiledQuery, KindBitset, KindResolver, PredArgSpec, Predicate, Quant, QueryError,
     QueryStep, compile, parse,
 };
+pub use sink::QuerySink;
