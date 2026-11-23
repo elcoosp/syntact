@@ -222,9 +222,15 @@ impl Document {
         }
     }
 
-    /// Build every view from the current outline (pub for the bench
-    /// phase-attribution dev tool).
-    #[doc(hidden)]
+    /// Build every view from the current outline in one span sweep:
+    /// diagnostics, symbols, folding, and semantic tokens.
+    ///
+    /// One monotonic conversion turns every node span into UTF-16
+    /// positions; the view builders read that table instead of
+    /// re-walking the text per node. Public so the bench
+    /// phase-attribution dev tool (`crates/bench/examples/
+    /// pack_lsp_phases.rs`) can drive the view pipeline directly; LSP
+    /// sessions get the same views through the document update cycle.
     pub fn build_views(&mut self) {
         // One monotonic sweep converts every node span to UTF-16
         // positions; the view builders read the table instead of
