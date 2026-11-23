@@ -118,125 +118,173 @@ impl<'q> QueryCursor<'q> {
                             parent.last_token = frame.last_token;
                         }
                     }
-                    for (pattern_index, pattern) in self.query.patterns.iter().enumerate() {
-                        // O(1) kind prefilter.
-                        if !pattern.wildcard && pattern.kind != frame.kind {
-                            continue;
-                        }
-                        // Child matching with span binding — stack-only
-                        // backtracking; the assignment lands in scratch.
-                        let Some(bound) = match_children(&pattern.children, &frame) else {
-                            continue;
-                        };
-                        scratch.clear();
-                        if let Some(slot) = pattern.capture {
-                            scratch.push(Capture {
-                                slot,
-                                span: span.clone(),
-                            });
-                        }
-                        for (step, child_span) in pattern.children.iter().zip(&bound) {
-                            if let (Some(slot), Some(child)) = (step.capture, child_span) {
-                                scratch.push(Capture {
-                                    slot,
-                                    span: clamp_span(child, source.len()),
-                                });
-                            }
-                        }
-                        self.dedup(scratch);
-                        if !self.predicates_hold(scratch, source, predicate) {
-                            continue;
-                        }
-                        matches.push(Match {
-                            pattern: pattern_index,
-                            span: span.clone(),
-                            captures: scratch.clone(),
-                        });
-                    }
+                    let summary = NodeSummary {
+                        kind: frame.kind,
+                        child_kinds: frame.child_kinds,
+                        child_spans: frame.child_spans,
+                    };
+                    let matches_for_node = evaluate_node(
+                        self.query,
+                        &mut self.seen,
+                        scratch,
+                        &summary,
+                        span,
+                        source,
+                        predicate,
+                    );
+                    matches.extend(matches_for_node);
                 }
             }
         }
         matches
     }
-
-    /// Dedup `scratch` in place (same slot + span emitted once).
-    fn dedup(&mut self, scratch: &mut Vec<Capture>) {
-        scratch.dedup_by(|a, b| a.slot == b.slot && a.span == b.span);
-        let mut unique: Vec<Capture> = Vec::with_capacity(scratch.len());
-        for capture in scratch.drain(..) {
-            let key = (
-                capture.slot,
-                u32::try_from(capture.span.start).unwrap_or(u32::MAX),
-                u32::try_from(capture.span.end).unwrap_or(u32::MAX),
-            );
-            if !self.seen.contains(&key) {
-                self.seen.push(key);
-                unique.push(capture);
-            }
-        }
-        *scratch = unique;
-    }
-
-    /// Built-in predicates plus the host closure.
-    fn predicates_hold(
-        &self,
-        captures: &[Capture],
-        source: &str,
-        predicate: &mut PredicateFn<'_>,
-    ) -> bool {
-        let text_of = |slot: u8| -> Option<&str> {
-            captures.iter().find(|c| c.slot == slot).map(|c| {
-                let start = c.span.start.min(source.len());
-                let end = c.span.end.min(source.len()).max(start);
-                &source[start..end]
-            })
-        };
-        for pred in &self.query.predicates {
-            let holds = match pred {
-                Predicate::Eq { capture, value } => {
-                    text_of(*capture).is_some_and(|text| text == value)
-                }
-                Predicate::NotEq { capture, value } => {
-                    text_of(*capture).is_none_or(|text| text != value)
-                }
-                Predicate::Custom { name, args, .. } => {
-                    let argv: Vec<PredicateArg<'_>> = args
-                        .iter()
-                        .map(|arg| match arg {
-                            crate::query::PredArgSpec::Capture(slot) => {
-                                PredicateArg::Capture(text_of(*slot).unwrap_or(""))
-                            }
-                            crate::query::PredArgSpec::Text(text) => PredicateArg::Text(text),
-                        })
-                        .collect();
-                    predicate(name, &argv)
-                }
-            };
-            if !holds {
-                return false;
-            }
-        }
-        true
-    }
 }
 
-/// One open node buffered while its subtree streams by.
-struct NodeFrame {
+/// One completed node's buffered summary: the shared evaluation input
+/// for the pull cursor ([`QueryCursor`]) and the push sink
+/// ([`crate::sink::QuerySink`]).
+pub(crate) struct NodeSummary {
     /// The node's kind (from its `Enter` step).
-    kind: u16,
-    /// Index of the node's first token.
-    first_token: usize,
-    /// Index of the node's last token (None = zero-width so far).
-    last_token: Option<usize>,
+    pub kind: u16,
     /// The kinds of the node's direct children (tokens AND subnodes).
-    child_kinds: Vec<u16>,
+    pub child_kinds: Vec<u16>,
     /// The spans of those children, parallel to `child_kinds`.
-    child_spans: Vec<Range<u32>>,
+    pub child_spans: Vec<Range<u32>>,
+}
+
+/// Run every compiled pattern against a completed node; returns the
+/// matches whose predicates hold. Shared by both match paths so the
+/// pull and push consumers stay behaviorally identical: O(1) kind
+/// prefilter, subsequence child matching with span binding into
+/// `scratch`, capture dedup against `seen`, then predicates.
+pub(crate) fn evaluate_node(
+    query: &CompiledQuery,
+    seen: &mut Vec<(u8, u32, u32)>,
+    scratch: &mut Vec<Capture>,
+    node: &NodeSummary,
+    span: Range<usize>,
+    source: &str,
+    predicate: &mut PredicateFn<'_>,
+) -> Vec<Match> {
+    let mut matches = Vec::new();
+    for (pattern_index, pattern) in query.patterns.iter().enumerate() {
+        // O(1) kind prefilter.
+        if !pattern.wildcard && pattern.kind != node.kind {
+            continue;
+        }
+        // Child matching with span binding — stack-only backtracking;
+        // the assignment lands in scratch.
+        let Some(bound) = match_children(&pattern.children, &node.child_kinds, &node.child_spans)
+        else {
+            continue;
+        };
+        scratch.clear();
+        if let Some(slot) = pattern.capture {
+            scratch.push(Capture {
+                slot,
+                span: span.clone(),
+            });
+        }
+        for (step, child_span) in pattern.children.iter().zip(&bound) {
+            if let (Some(slot), Some(child)) = (step.capture, child_span) {
+                scratch.push(Capture {
+                    slot,
+                    span: clamp_span(child, source.len()),
+                });
+            }
+        }
+        dedup_captures(seen, scratch);
+        if !predicates_hold(query, scratch, source, predicate) {
+            continue;
+        }
+        matches.push(Match {
+            pattern: pattern_index,
+            span: span.clone(),
+            captures: scratch.clone(),
+        });
+    }
+    matches
+}
+
+/// Dedup `scratch` in place (same slot + span emitted once) against the
+/// run-wide `seen` set.
+fn dedup_captures(seen: &mut Vec<(u8, u32, u32)>, scratch: &mut Vec<Capture>) {
+    scratch.dedup_by(|a, b| a.slot == b.slot && a.span == b.span);
+    let mut unique: Vec<Capture> = Vec::with_capacity(scratch.len());
+    for capture in scratch.drain(..) {
+        let key = (
+            capture.slot,
+            u32::try_from(capture.span.start).unwrap_or(u32::MAX),
+            u32::try_from(capture.span.end).unwrap_or(u32::MAX),
+        );
+        if !seen.contains(&key) {
+            seen.push(key);
+            unique.push(capture);
+        }
+    }
+    *scratch = unique;
+}
+
+/// Built-in predicates plus the host closure.
+fn predicates_hold(
+    query: &CompiledQuery,
+    captures: &[Capture],
+    source: &str,
+    predicate: &mut PredicateFn<'_>,
+) -> bool {
+    let text_of = |slot: u8| -> Option<&str> {
+        captures.iter().find(|c| c.slot == slot).map(|c| {
+            let start = c.span.start.min(source.len());
+            let end = c.span.end.min(source.len()).max(start);
+            &source[start..end]
+        })
+    };
+    for pred in &query.predicates {
+        let holds = match pred {
+            Predicate::Eq { capture, value } => text_of(*capture).is_some_and(|text| text == value),
+            Predicate::NotEq { capture, value } => {
+                text_of(*capture).is_none_or(|text| text != value)
+            }
+            Predicate::Custom { name, args, .. } => {
+                let argv: Vec<PredicateArg<'_>> = args
+                    .iter()
+                    .map(|arg| match arg {
+                        crate::query::PredArgSpec::Capture(slot) => {
+                            PredicateArg::Capture(text_of(*slot).unwrap_or(""))
+                        }
+                        crate::query::PredArgSpec::Text(text) => PredicateArg::Text(text),
+                    })
+                    .collect();
+                predicate(name, &argv)
+            }
+        };
+        if !holds {
+            return false;
+        }
+    }
+    true
+}
+
+/// One open node buffered while its subtree streams by. Shared by the
+/// pull cursor and the push sink ([`crate::sink::QuerySink`]) — identical
+/// span and child semantics, so the two match paths stay behaviorally
+/// identical.
+pub(crate) struct NodeFrame {
+    /// The node's kind (from its `Enter` step).
+    pub(crate) kind: u16,
+    /// Index of the node's first token.
+    pub(crate) first_token: usize,
+    /// Index of the node's last token (None = zero-width so far).
+    pub(crate) last_token: Option<usize>,
+    /// The kinds of the node's direct children (tokens AND subnodes).
+    pub(crate) child_kinds: Vec<u16>,
+    /// The spans of those children, parallel to `child_kinds`.
+    pub(crate) child_spans: Vec<Range<u32>>,
 }
 
 impl NodeFrame {
     /// The node's byte span: first token start .. last token end.
-    fn span(&self, ranges: &[(u16, Range<u32>)], source_len: usize) -> Range<usize> {
+    pub(crate) fn span(&self, ranges: &[(u16, Range<u32>)], source_len: usize) -> Range<usize> {
         let clamp = |v: u32| -> usize { usize::try_from(v).unwrap_or(0).min(source_len) };
         let Some((_, first)) = ranges.get(self.first_token) else {
             return 0..0;
@@ -264,9 +312,13 @@ fn clamp_span(span: &Range<u32>, source_len: usize) -> Range<usize> {
 /// subsequence matching in order, gaps allowed, quantifiers per step.
 /// Returns, per step, the span of the FIRST child it consumed (for
 /// capture binding) — pure backtracking over indices, no allocation.
-fn match_children(steps: &[ChildStep], frame: &NodeFrame) -> Option<Vec<Option<Range<u32>>>> {
+fn match_children(
+    steps: &[ChildStep],
+    child_kinds: &[u16],
+    child_spans: &[Range<u32>],
+) -> Option<Vec<Option<Range<u32>>>> {
     let mut bound: Vec<Option<Range<u32>>> = vec![None; steps.len()];
-    if match_children_from(steps, 0, frame, 0, &mut bound) {
+    if match_children_from(steps, 0, child_kinds, child_spans, 0, &mut bound) {
         Some(bound)
     } else {
         None
@@ -279,7 +331,8 @@ fn match_children(steps: &[ChildStep], frame: &NodeFrame) -> Option<Vec<Option<R
 fn match_children_from(
     steps: &[ChildStep],
     step_index: usize,
-    frame: &NodeFrame,
+    child_kinds: &[u16],
+    child_spans: &[Range<u32>],
     child_index: usize,
     bound: &mut [Option<Range<u32>>],
 ) -> bool {
@@ -288,26 +341,42 @@ fn match_children_from(
     }
     let step = &steps[step_index];
     let zero_ok = matches!(step.quant, Quant::ZeroOrOne | Quant::ZeroOrMore);
-    if zero_ok && match_children_from(steps, step_index + 1, frame, child_index, bound) {
+    if zero_ok
+        && match_children_from(
+            steps,
+            step_index + 1,
+            child_kinds,
+            child_spans,
+            child_index,
+            bound,
+        )
+    {
         return true; // the step matches nothing
     }
     // Find the next matching child (skipping gaps), consume it, and
     // continue on the step's quantifier path.
     let mut k = child_index;
-    while k < frame.child_kinds.len() {
-        if step.kind == u16::MAX || frame.child_kinds[k] == step.kind {
+    while k < child_kinds.len() {
+        if step.kind == u16::MAX || child_kinds[k] == step.kind {
             let first_here = bound[step_index].is_none();
             if first_here {
-                bound[step_index] = Some(frame.child_spans[k].clone());
+                bound[step_index] = Some(child_spans[k].clone());
             }
             // After consuming one child: repeatable quants may either
             // move to the next step or consume more; the fixed quants
             // always move on.
-            if match_children_from(steps, step_index + 1, frame, k + 1, bound) {
+            if match_children_from(
+                steps,
+                step_index + 1,
+                child_kinds,
+                child_spans,
+                k + 1,
+                bound,
+            ) {
                 return true;
             }
             if matches!(step.quant, Quant::ZeroOrMore | Quant::OneOrMore)
-                && match_children_from(steps, step_index, frame, k + 1, bound)
+                && match_children_from(steps, step_index, child_kinds, child_spans, k + 1, bound)
             {
                 return true;
             }
