@@ -4,7 +4,7 @@
 //! steady-state document, plus the chunked validation seam
 //! (`validate_plan` = planning + per-chunk validation, and
 //! `validate_chunks` over a precomputed plan — the per-chunk cost the
-//! region-parallel drive pays). Run-fast config — the zero-allocation
+//! region-parallel drive pays). Criterion defaults — the zero-allocation
 //! gate lives in the dhat-counted tests.
 
 use criterion::{Criterion, criterion_group, criterion_main};
