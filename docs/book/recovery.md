@@ -31,7 +31,7 @@ use gir_ir::{Grammar, GrammarBuilder, TokenId};
 use lr_shadow::{Action, Automaton, Look, StateId};
 use recovery::{Planner, RepairOp};
 
-/// The JSON-shaped grammar (rules mirror the pack's grammar.kdl).
+/// The JSON-shaped grammar (rules mirror the JSON pack's embedded tables).
 fn json_grammar() -> Grammar {
     let mut b = GrammarBuilder::new("json");
     let brace_open = b.token_lit("lbrace", "{").expect("token");
