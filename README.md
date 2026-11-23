@@ -175,11 +175,12 @@ All subcommands run against the real pipeline (`crates/cli/src/lib.rs`); exit co
 
 | Command | What it does |
 |---|---|
-| `syntact check <FILE>` | Validate a `.gir` grammar (KDL to IR) or check a JSON document through the pack |
-| `syntact build <GRAMMAR.gir>` | Compile the front half: loader, lexer DFA, LR(1) shadow; prints per-stage stats |
+| `syntact check <FILE>` | Validate a `.gir` grammar (KDL to IR) or check a document through the pack its extension selects (`--pack` overrides; stdin defaults to JSON) |
+| `syntact build <GRAMMAR.gir> [-o <DIR>]` | Compile the front half: loader, lexer DFA, LR(1) shadow; prints per-stage stats. With `-o <DIR>`, emit a standalone compiling Rust parser crate (the codegen-rust descent backend) |
 | `syntact conflicts <GRAMMAR.gir>` | Determinism report: per-rule backend classification plus every LL(1) conflict site |
-| `syntact conformance <FILES…>` | Gate `render(parse(x)) == x` over documents |
-| `syntact trace <PACK> <FILE>` | Per-region recovery events (offset, kind, repair ops, resync point); `--json` for machine-readable output |
+| `syntact conformance <FILES…> [--pack <PACK>]` | Gate `render(parse(x)) == x` over documents through a registered pack (default `json`) |
+| `syntact packs` | List the registered packs: name, language id, extensions |
+| `syntact trace <PACK> <FILE>` | Per-region recovery events (offset, kind, repair ops, resync point) for every registered pack; `--json` for machine-readable output |
 | `syntact lsp` | The `.gir` grammar language server over stdio |
 | `syntact pack-lsp` | The pack language server over stdio for the ten pack languages |
 
@@ -197,7 +198,10 @@ One crate per language, named `packs-<language>`, each shipping a lossless parse
 - **Community packs** — `packs-ini`, `packs-csv`, `packs-markdown`.
 
 Every pack exposes `parse(source) -> Arc<GreenNode>` plus dense `kinds`/`token_kinds` tables that the
-query compiler resolves against. For the full walkthrough — event protocol, incremental reparsing,
+query compiler resolves against. One canonical registration of the ten packs lives in
+[`crates/pack-registry`](crates/pack-registry) — name, language id, and extension lookups plus the
+uniform entry points — consumed by the CLI, both language servers, and the playground server. For
+the full walkthrough — event protocol, incremental reparsing,
 queries, recovery — read [the book](docs/book/SUMMARY.md).
 
 ## Status
@@ -212,8 +216,8 @@ queries, recovery — read [the book](docs/book/SUMMARY.md).
 
 ## Learn more
 
-- [The syntact book](docs/book/SUMMARY.md) — eight chapters: getting started, the event protocol, the
-  pack walkthrough, incremental reparsing, queries, recovery, and the two language servers.
+- [The syntact book](docs/book/SUMMARY.md) — nine chapters: getting started, the event protocol, the
+  pack walkthrough, incremental reparsing, queries, recovery, codegen, and the two language servers.
 - [Architecture and roadmap](docs/architecture-and-roadmap.md) — the full design with primary-source
   evidence pointers (oxc, tree-sitter, rust-analyzer, rowan, grmtools, lezer) and architecture decision records.
 - [Cookbook recipes](docs/cookbook/recipes/) — tested, executable examples: parsing, the event stream,
