@@ -1,6 +1,6 @@
 [package]
 name = "cli"
-description = "syntact CLI — check/build/conflicts/conformance/trace (issue 020)"
+description = "syntact CLI — check/build/conflicts/conformance/packs/trace (issue 020, registry-routed by issue 046)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -20,13 +20,13 @@ runtime-core.workspace = true
 lexgen.workspace = true
 harness.workspace = true
 lsp.workspace = true
-packs-json.workspace = true
-packs-toml.workspace = true
+pack-registry.workspace = true
 recovery.workspace = true
 
 [dev-dependencies]
 generated-json.workspace = true
 incremental.workspace = true
+packs-json.workspace = true
 query.workspace = true
 lr-shadow.workspace = true
 pretty_assertions.workspace = true
