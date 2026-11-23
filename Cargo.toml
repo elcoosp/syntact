@@ -17,6 +17,7 @@ members = [
     "crates/lexgen",
     "crates/lr-shadow",
     "crates/lsp",
+    "crates/pack-registry",
     "crates/playground-server",
     "crates/query",
     "crates/recovery",
@@ -87,7 +88,6 @@ unreadable_literal = "allow"
 gir-ir = { path = "crates/gir-ir" }
 gir-syntax = { path = "crates/gir-syntax" }
 gir-analysis = { path = "crates/gir-analysis" }
-gir-transform = { path = "crates/gir-transform" }
 lr-shadow = { path = "crates/lr-shadow" }
 lexgen = { path = "crates/lexgen" }
 codegen-rust = { path = "crates/codegen-rust" }
@@ -101,10 +101,8 @@ descent-lower = { path = "crates/descent-lower" }
 generated-json = { path = "crates/generated-json" }
 incremental = { path = "crates/incremental" }
 query = { path = "crates/query" }
-structural-index = { path = "crates/structural-index" }
 lsp = { path = "crates/lsp" }
-importer = { path = "crates/importer" }
-playground-server = { path = "crates/playground-server" }
+pack-registry = { path = "crates/pack-registry" }
 packs-toml = { path = "packs/toml" }
 packs-typescript = { path = "packs/typescript" }
 packs-python = { path = "packs/python" }
@@ -120,13 +118,11 @@ kdl = "6.7.1"
 miette = "7.6.0"
 thiserror = "2.0.21"
 memchr = "2.8.3"
-simdutf8 = "0.1.5"
 clap = { version = "4.6.7", features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 criterion = "0.8.2"
 dhat = "0.3.3"
-indexmap = "2.14.2"
 pretty_assertions = "1.4.1"
 
 [profile.release]
