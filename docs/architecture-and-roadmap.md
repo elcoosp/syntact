@@ -525,10 +525,13 @@ pub enum Event {                       // 8 bytes (RA-proven shape, event.rs:12-
 | Consumer | Behavior |
 |---|---|
 | validate sink | counts/positions only — events are nearly free |
+| kind statistics | per-kind histograms, depth, byte coverage (`runtime-core::sink::StatsSink`) |
 | token sink | emits tokens (highlighting) |
 | skeleton builder | materializes nodes with `@reuse`/top-level kinds only |
 | full CST builder | green/red tree (§7.6), trivia attach (§7.5.4) |
 | streaming query matcher | runs compiled query steps during emission (§7.8) |
+| diagnostic resolution | deferred indexes resolved to owned messages via the side table (`runtime-core::sink::DiagCollector`) |
+| step-gated consumer | predicate decides which steps reach the inner sink (`runtime-core::sink::FilterSink`) |
 | incremental engine | splices `ReusedSubtree` records into the stream |
 
 Trivia never enters the event stream (biome lesson, §2.4): the token source accumulates `(kind, range, trailing)` trivia records; the tree sink splits leading/trailing at newlines. Ruff's parallel full-token vector is offered as a mode for tools that want raw tokens.
