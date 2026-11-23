@@ -10,12 +10,13 @@ authors.workspace = true
 
 [dependencies]
 clap.workspace = true
+codegen-rust.workspace = true
+descent-lower.workspace = true
 gir-ir.workspace = true
 gir-syntax.workspace = true
 gir-analysis.workspace = true
 lr-shadow.workspace = true
 runtime-core.workspace = true
-codegen-rust.workspace = true
 lexgen.workspace = true
 harness.workspace = true
 lsp.workspace = true
@@ -24,10 +25,12 @@ packs-toml.workspace = true
 recovery.workspace = true
 
 [dev-dependencies]
+generated-json.workspace = true
 incremental.workspace = true
 query.workspace = true
 lr-shadow.workspace = true
 pretty_assertions.workspace = true
+runtime-core.workspace = true
 
 [lints]
 workspace = true
