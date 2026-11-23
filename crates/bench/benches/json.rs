@@ -4,7 +4,7 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use packs_json::reference;
-use runtime_core::sink::{SkeletonSink, TokenSink, ValidationSink, drive_sink};
+use runtime_core::sink::{DiagCollector, SkeletonSink, TokenSink, ValidationSink, drive_sink};
 
 /// Deterministic JSON corpus: small / medium / steady-state.
 fn corpus() -> Vec<(String, &'static str)> {
@@ -76,6 +76,20 @@ fn modes(c: &mut Criterion) {
             let mut sink = SkeletonSink::default();
             drive_sink(&output, &plain, &mut sink).expect("drives");
             sink.nodes.len()
+        });
+    });
+    // The diagnostic-resolution sink rides the same drive (the table
+    // holds the pack's deferred diag texts; the collector clones the
+    // entries the stream's error events reference).
+    let mut diag_table = runtime_core::diagnostic::DiagTable::default();
+    for i in 0..32u32 {
+        diag_table.push(format!("diag {i}"), i..i + 1);
+    }
+    c.bench_function("json/mode/diag_collector", |b| {
+        b.iter(|| {
+            let mut sink = DiagCollector::new(&diag_table);
+            drive_sink(&output, &plain, &mut sink).expect("drives");
+            (sink.diagnostics().len(), sink.unresolved())
         });
     });
 }
