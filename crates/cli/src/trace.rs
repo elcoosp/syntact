@@ -1,14 +1,14 @@
 //! `syntact trace` — per-region recovery events over a real parse
-//! (issue 029).
+//! (issue 029, registry-routed over every shipped pack by issue 046).
 //!
 //! Two real engines cooperate, no stubs:
 //!
-//! - **Pack reference parsers** ([`packs_json::reference`] /
-//!   [`packs_toml::reference`]): their [`Event::Error`] side-table
-//!   entries give every recovery region — the byte offset of the
-//!   offending token, the diagnostic message, and the resync point
-//!   where the parser resumed (the sync token right after the error
-//!   region).
+//! - **Pack reference parsers** (through the [`pack_registry`] seam):
+//!   their [`Event::Error`] side-table entries give every recovery
+//!   region — the byte offset of the offending token, the diagnostic
+//!   message, and the resync point where the parser resumed (the sync
+//!   token right after the error region). JSON keeps the full engine
+//!   below; the other nine packs report these native regions directly.
 //! - **Shadow automaton + CPCT+ planner** (JSON — the flagship recovery
 //!   oracle from issue 026): the fixture grammar's LR(1) automaton is
 //!   driven over the source in a single incremental pass; at every
@@ -35,8 +35,7 @@ use std::ops::Range;
 use gir_ir::Grammar;
 use harness::metrics::{self, FixtureToken, WINDOW};
 use lr_shadow::{Action, Automaton, Look};
-use packs_json::reference as json_ref;
-use packs_toml::reference as toml_ref;
+use pack_registry::{PackEntry, PackRegistry};
 use recovery::{Planner, RepairOp};
 use runtime_core::events::Event;
 
@@ -85,16 +84,27 @@ pub struct TraceOutput {
     pub regions: Vec<TraceRegion>,
 }
 
-/// Trace one document through `pack` (`"json"` or `"toml"`); pure.
+/// Trace one document through any registered pack; pure. JSON keeps the
+/// shadow-automaton CPCT+ repair loop (issue 026); every other pack
+/// reports its reference parser's native recovery regions (the shape
+/// TOML shipped in issue 029) through the pack-registry seam (issue
+/// 046).
 ///
 /// # Errors
-/// Unknown pack name.
+/// Unknown pack name (the message lists every registered pack).
 #[must_use = "the trace output is the whole point"]
 pub fn trace(pack: &str, source: &str) -> Result<TraceOutput, String> {
-    match pack {
-        "json" => Ok(trace_json(source)),
-        "toml" => Ok(trace_toml(source)),
-        other => Err(format!("unknown pack `{other}` (available: json, toml)")),
+    let registry = PackRegistry::reference();
+    let Some(entry) = registry.get(pack) else {
+        return Err(format!(
+            "unknown pack `{pack}` (available: {})",
+            registry.names().join(", ")
+        ));
+    };
+    if entry.name == "json" {
+        Ok(trace_json(entry, source))
+    } else {
+        Ok(trace_reference(entry, source))
     }
 }
 
@@ -114,12 +124,12 @@ struct PackDiag {
 }
 
 /// The JSON trace: pack diagnostics + the shadow-automaton repair loop.
-fn trace_json(source: &str) -> TraceOutput {
+fn trace_json(entry: &PackEntry, source: &str) -> TraceOutput {
     let source_len = source.len();
-    let (events, ranges, _errors) = json_ref::parse_events(source);
+    let (events, ranges, _errors) = (entry.parse_events)(source);
     let diags = pack_diags(&events, &ranges, source_len);
 
-    let (mut regions, matched) = automaton_regions(source, source_len, &diags);
+    let (mut regions, matched) = automaton_regions(entry, source, source_len, &diags);
     // Pack diagnostics no repair region explains (lexer gaps, garbage
     // the fixture lexer skips, anything before the first repair) still
     // get reported — as native skip-to-resync regions with no ops.
@@ -131,7 +141,7 @@ fn trace_json(source: &str) -> TraceOutput {
         if !explained {
             regions.push(TraceRegion {
                 offset: diag.offset,
-                kind: json_ref::error_message(diag.diag).to_owned(),
+                kind: (entry.error_message)(diag.diag).to_owned(),
                 ops: Vec::new(),
                 resync: diag.resume,
             });
@@ -139,31 +149,33 @@ fn trace_json(source: &str) -> TraceOutput {
     }
     regions.sort_by(|a, b| a.offset.cmp(&b.offset).then_with(|| a.kind.cmp(&b.kind)));
     TraceOutput {
-        pack: "json".to_owned(),
+        pack: entry.name.to_owned(),
         source_len,
         ok: regions.is_empty(),
         regions,
     }
 }
 
-/// The TOML trace: the reference parser's native recovery regions (no
-/// automaton fixture yet — ops stay empty, resync is the parser's own
-/// skip-to-sync resume point).
-fn trace_toml(source: &str) -> TraceOutput {
+/// The generic reference trace (every non-json pack): the pack's native
+/// recovery regions — no automaton fixture for these languages yet, so
+/// ops stay empty and resync is the parser's own skip-to-sync resume
+/// point. Dispatch goes through the registry entry's function pointers,
+/// adding no layer over the pack's own engine.
+fn trace_reference(entry: &PackEntry, source: &str) -> TraceOutput {
     let source_len = source.len();
-    let (events, ranges, _errors) = toml_ref::parse_events(source);
+    let (events, ranges, _errors) = (entry.parse_events)(source);
     let mut regions: Vec<TraceRegion> = pack_diags(&events, &ranges, source_len)
         .into_iter()
         .map(|diag| TraceRegion {
             offset: diag.offset,
-            kind: toml_ref::error_message(diag.diag).to_owned(),
+            kind: (entry.error_message)(diag.diag).to_owned(),
             ops: Vec::new(),
             resync: diag.resume,
         })
         .collect();
     regions.sort_by(|a, b| a.offset.cmp(&b.offset).then_with(|| a.kind.cmp(&b.kind)));
     TraceOutput {
-        pack: "toml".to_owned(),
+        pack: entry.name.to_owned(),
         source_len,
         ok: regions.is_empty(),
         regions,
@@ -242,6 +254,7 @@ fn pack_diags(events: &[Event], ranges: &[(u16, Range<u32>)], source_len: usize)
 /// Synthetic tokens are recognizable by their empty byte range (the
 /// fixture lexer never emits one).
 fn automaton_regions(
+    entry: &PackEntry,
     source: &str,
     source_len: usize,
     diags: &[PackDiag],
@@ -344,7 +357,7 @@ fn automaton_regions(
                     .iter()
                     .map(|token| token.look)
                     .collect();
-                let kind = resolve_kind(diags, &mut matched, offset, &window, &names);
+                let kind = resolve_kind(entry, diags, &mut matched, offset, &window, &names);
                 let plan = if planned_at == Some(idx) {
                     None // same failure twice: the script did not line up
                 } else {
@@ -396,6 +409,7 @@ fn automaton_regions(
 /// (the pack's error token often swallows leading whitespace) — and has
 /// not been consumed yet; else the unexpected-look fallback.
 fn resolve_kind(
+    entry: &PackEntry,
     diags: &[PackDiag],
     matched: &mut BTreeSet<usize>,
     offset: usize,
@@ -407,7 +421,7 @@ fn resolve_kind(
     match diags.iter().position(covers) {
         Some(pos) if !matched.contains(&pos) => {
             matched.insert(pos);
-            json_ref::error_message(diags[pos].diag).to_owned()
+            (entry.error_message)(diags[pos].diag).to_owned()
         }
         _ => match window.first() {
             Some(look) => format!("unexpected {}", look_name(*look, names)),
