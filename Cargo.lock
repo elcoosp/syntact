@@ -116,10 +116,12 @@ dependencies = [
 name = "bench"
 version = "1.1.0"
 dependencies = [
+ "codegen-rust",
  "criterion",
  "descent",
  "descent-lower",
  "dhat",
+ "generated-json",
  "gir-syntax",
  "harness",
  "lexgen",
@@ -244,6 +246,8 @@ version = "1.1.0"
 dependencies = [
  "clap",
  "codegen-rust",
+ "descent-lower",
+ "generated-json",
  "gir-analysis",
  "gir-ir",
  "gir-syntax",
@@ -264,8 +268,13 @@ dependencies = [
 name = "codegen-rust"
 version = "1.1.0"
 dependencies = [
+ "descent",
+ "descent-lower",
  "gir-analysis",
  "gir-ir",
+ "gir-syntax",
+ "lexgen",
+ "runtime-core",
 ]
 
 [[package]]
@@ -419,6 +428,17 @@ dependencies = [
  "futures-task",
  "pin-project-lite",
  "slab",
+]
+
+[[package]]
+name = "generated-json"
+version = "1.1.0"
+dependencies = [
+ "codegen-rust",
+ "descent-lower",
+ "gir-syntax",
+ "lexgen",
+ "runtime-core",
 ]
 
 [[package]]
