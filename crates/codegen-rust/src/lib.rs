@@ -1,19 +1,23 @@
-//! # codegen-rust — deterministic O(1) Rust table emission (§4.3, issue 015)
+//! # codegen-rust — deterministic Rust emission (§4.3, §6.1 pass 12, issue 045)
 //!
-//! The table backend of the parser compiler: dense tables go in, stable
+//! The parser-compiler's emission stage: dense descriptors go in, stable
 //! Rust source comes out.
 //!
-//! - [`CompactTable`] — row-displacement encoding of sparse `u16` tables:
-//!   rows are placed at the first free base offset (deterministic
-//!   first-fit), lookups are two array reads — O(1), branch-free on the
-//!   happy path.
-//! - [`Emitter`] — emission scaffolding with the readability contract
-//!   (ADR-013): output is stable under regeneration (no timestamps, fixed
-//!   wrapping, `#[rustfmt::skip]` blocks), so generated diffs only show
-//!   real grammar changes.
+//! Two backends:
+//!
+//! - [`table`] / [`emit::Emitter`] — the O(1) row-displacement table backend
+//!   (issue 015): sparse `u16` tables compress to one flat array + base
+//!   offsets; the readability contract (ADR-013) keeps emission diff-stable.
+//! - [`descent`] — the descent backend (issue 045): takes a
+//!   [`descent_lower::Lowered`] program + a [`lexgen::Scanner`] and emits a
+//!   standalone, compiling, safe-Rust parser crate that reproduces
+//!   `descent::engine` output byte-for-byte. Closes the compiler loop the
+//!   roadmap promises (§0, §12.3 P0 "compiling crate" row).
 
+pub mod descent;
 pub mod emit;
 pub mod table;
 
+pub use descent::{EmitError, EmittedCrate, EmittedFile, emit_crate};
 pub use emit::Emitter;
 pub use table::CompactTable;
