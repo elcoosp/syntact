@@ -1,0 +1,28 @@
+[package]
+name = "pack-registry"
+description = "the canonical pack registry: one registration of the shipped packs for the CLI, the language servers, and the playground (issue 046)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+runtime-core.workspace = true
+packs-json.workspace = true
+packs-toml.workspace = true
+packs-python.workspace = true
+packs-typescript.workspace = true
+packs-rust.workspace = true
+packs-c.workspace = true
+packs-sql.workspace = true
+packs-ini.workspace = true
+packs-csv.workspace = true
+packs-markdown.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+
+[lints]
+workspace = true
