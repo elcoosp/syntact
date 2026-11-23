@@ -628,7 +628,7 @@ struct GreenNodeHead {
 - **Interning/dedup**: NodeCache-style hash-consing with pre-hashing, whole-node dedup (biome), >3-children cutoff (rowan's measured trade-off); expected saving ~17% on repetitive files (rowan's rustc measurement) and far more on generated/repetitive code.
 - Error/recovery bookkeeping per node: `error_cost: u32` and `has_changes` bit maintained bottom-up — exactly the fields tree-sitter's changed-range diff and reuse checks consume.
 
-Red layer: RA-style refcounted zipper cursor (parent/index/offset), created on traversal, freed at rc 0 — the default and cheapest view. For parallel consumers, a **persistent red mode** (cstree semantics: whole-tree arc, `Send+Sync` nodes, references instead of clones) is a cargo feature of `runtime-core`. SoA arrays are the *internal* green storage for kinds/offsets/flags per node's children; the red/green semantics are never sacrificed to SoA (correction of v1, §1.2 #6).
+Red layer: RA-style refcounted zipper cursor (parent/index/offset), created on traversal, freed at rc 0 — the default and cheapest view. For parallel consumers, a **persistent red mode** (cstree semantics: whole-tree arc, `Send+Sync` nodes, references instead of clones) is planned as an opt-in cargo feature of `runtime-core` — not shipped today: `runtime-core` defines no cargo features, and the persistent module's chunked merge is single-threaded, the parallelism living caller-side (see the persistent module docs). SoA arrays are the *internal* green storage for kinds/offsets/flags per node's children; the red/green semantics are never sacrificed to SoA (correction of v1, §1.2 #6).
 
 Memory budget (targets, verified against tree-sitter/rowan baselines in CI): ≤24 B/leaf green + header amortization; ≤1.0× tree-sitter bytes/node in year 1, ≤0.7× with interning by year 3.
 
@@ -843,6 +843,16 @@ Every pack publishes: conformance %, determinism score, recovery metrics, bench 
 Assumed: **one senior engineer full-time** (the project owner), with well-parallelizable tracks marked `[P2]` for a second contributor. Every phase ends with a *usable artifact* (a pack or a capability shipped on crates.io/docs) — no phase ends in "infrastructure only". Cadence: quarterly goals, weekly bench snapshots, ADR per major decision, monthly conformance dashboard refresh.
 
 ## 12.2 Timeline (mermaid, day-quantized)
+
+> **Status (2026-11):** the gantt below is the original long-horizon
+> plan, kept for reference. Delivery was compressed by two orders of
+> magnitude: issues 001–046 plus epics 090–094 (see `issues/done/`)
+> shipped the P0–P5 deliverables — both language servers, all ten
+> packs, the importer, the playground, the book, and the 1.0-style API
+> snapshot — between 2026-11-02 and 2026-11-23. The unshipped remainder
+> is the P4 performance-maxima work (region-parallel scanning,
+> superinstruction mining, PGO, `loom`-clean persistent red) and the
+> P5 community/governance tail.
 
 ```mermaid
 gantt
