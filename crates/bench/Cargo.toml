@@ -29,7 +29,9 @@ packs-rust.workspace = true
 packs-sql.workspace = true
 packs-toml.workspace = true
 packs-typescript.workspace = true
+query.workspace = true
 runtime-core.workspace = true
+structural-index.workspace = true
 
 [[bench]]
 name = "json"
@@ -57,6 +59,14 @@ harness = false
 
 [[bench]]
 name = "pack_registry"
+harness = false
+
+[[bench]]
+name = "query_sink"
+harness = false
+
+[[bench]]
+name = "structural_validate"
 harness = false
 
 [lints]
