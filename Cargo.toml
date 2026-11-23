@@ -118,7 +118,6 @@ packs-markdown = { path = "packs/markdown" }
 # External
 kdl = "6.7.1"
 miette = "7.6.0"
-thiserror = "2.0.21"
 memchr = "2.8.3"
 clap = { version = "4.6.7", features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }
