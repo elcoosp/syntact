@@ -10,18 +10,21 @@
 //! | skeleton builder | [`SkeletonSink`] — kinds + spans, no trivia |
 //! | full CST builder | [`crate::tree::TreeBuilder`] — green/red trees (§7.6) |
 //! | streaming query matcher | the query crate's `QuerySink` — patterns run as the stream drives, zipped with tree-side sinks via [`TeeSink`] |
+//! | diagnostic resolution | [`DiagCollector`] — deferred indexes resolved to owned messages via the side table |
 //! | incremental engine | splices `ReusedSubtree` records, then this trait (§7.7, Phase 3) |
 
 use std::ops::Range;
 
+use crate::diagnostic::DiagTable;
 use crate::events::Output;
 
 /// A consumer of flattened parse output.
 ///
 /// Implemented by: validation counting, token collection, skeleton
 /// builder, green/red tree builder, the query crate's streaming
-/// `QuerySink` matcher, and the [`TeeSink`] combinator that runs two
-/// consumers over one pass (roadmap §7.2 table).
+/// `QuerySink` matcher, the [`DiagCollector`] diagnostic resolver, and
+/// the [`TeeSink`] combinator that runs two consumers over one pass
+/// (roadmap §7.2 table).
 pub trait Sink {
     /// Enter a node of `kind`.
     fn enter(&mut self, kind: crate::NodeKind);
@@ -245,6 +248,73 @@ impl Sink for TokenSink {
     fn error(&mut self, _diag: u32) {}
 }
 
+/// The diagnostic-resolution sink: the consumer-side half of the
+/// deferred-diagnostic protocol. The event stream carries bare diag
+/// indexes ([`Sink::error`]); this sink resolves each index through
+/// the parse's side table ([`DiagTable`]) into owned
+/// [`Diagnostic`](crate::diagnostic::Diagnostic) values in stream
+/// order — the bridge between "the stream saw error #7" and "here is
+/// the message and byte range", without a second pass over the stream.
+///
+/// Every other shipped sink treats the error channel as a count at
+/// most; tree-and-diagnostics consumers zip this in as a
+/// [`TeeSink`] half (one [`drive_sink`] pass builds the tree and
+/// resolves the diagnostics).
+#[derive(Debug)]
+pub struct DiagCollector<'t> {
+    /// The side table the parse produced (`diag` indexes index it).
+    table: &'t DiagTable,
+    /// Resolved diagnostics in stream order.
+    diagnostics: Vec<crate::diagnostic::Diagnostic>,
+    /// Error events whose index the table could not resolve (beyond
+    /// the table's length — e.g. the sentinel a truncated side table
+    /// leaves behind).
+    unresolved: usize,
+}
+
+impl<'t> DiagCollector<'t> {
+    /// A collector resolving through `table`.
+    #[must_use]
+    pub fn new(table: &'t DiagTable) -> Self {
+        Self {
+            table,
+            diagnostics: Vec::new(),
+            unresolved: 0,
+        }
+    }
+
+    /// The resolved diagnostics, in stream (event) order.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[crate::diagnostic::Diagnostic] {
+        &self.diagnostics
+    }
+
+    /// Consume the resolved diagnostics.
+    #[must_use = "the resolved diagnostics are the whole point"]
+    pub fn into_diagnostics(self) -> Vec<crate::diagnostic::Diagnostic> {
+        self.diagnostics
+    }
+
+    /// How many error events carried an index the table did not
+    /// resolve (the observability probe for truncated side tables).
+    #[must_use]
+    pub fn unresolved(&self) -> usize {
+        self.unresolved
+    }
+}
+
+impl Sink for DiagCollector<'_> {
+    fn enter(&mut self, _kind: crate::NodeKind) {}
+    fn exit(&mut self) {}
+    fn token(&mut self, _kind: crate::TokenKind, _range: Range<u32>, _n_raw: u8) {}
+    fn error(&mut self, diag: u32) {
+        match self.table.get(diag) {
+            Some(diagnostic) => self.diagnostics.push(diagnostic.clone()),
+            None => self.unresolved += 1,
+        }
+    }
+}
+
 /// A two-way sink combinator: every [`Sink`] call forwards to both
 /// halves — the §7.2 many-consumers-over-one-stream contract made
 /// concrete (e.g. build a tree and run the query crate's `QuerySink`
@@ -295,7 +365,7 @@ impl<A: Sink, B: Sink> Sink for TeeSink<A, B> {
 mod sink_tests {
     use std::ops::Range;
 
-    use super::{SkeletonSink, TeeSink, TokenSink, ValidationSink};
+    use super::{DiagCollector, SkeletonSink, TeeSink, TokenSink, ValidationSink};
     use crate::events::{Output, Step};
     use crate::sink::drive_sink;
 
@@ -527,6 +597,87 @@ mod sink_tests {
         assert_eq!(tee.second.tokens, solo_tokens);
     }
 
+    // ---- DiagCollector: deferred indexes resolved through the side table ----
+
+    /// A side table with three entries (the fixture any collector test
+    /// resolves against).
+    fn fixed_table() -> crate::diagnostic::DiagTable {
+        let mut table = crate::diagnostic::DiagTable::default();
+        table.push("missing colon", 3..3);
+        table.push("unexpected token", 5..8);
+        table.push("unterminated string", 11..20);
+        table
+    }
+
+    #[test]
+    fn diag_collector_resolves_error_events_in_stream_order() {
+        let table = fixed_table();
+        let output = pack(&[
+            Step::Enter { kind: 1 },
+            Step::Error { diag: 2 },
+            Step::Token { kind: 1, n_raw: 1 },
+            Step::Error { diag: 0 },
+            Step::Exit,
+        ]);
+        let mut sink = super::DiagCollector::new(&table);
+        drive_sink(&output, &[], &mut sink).expect("drives");
+        let resolved: Vec<&str> = sink
+            .diagnostics()
+            .iter()
+            .map(|d| d.message.as_str())
+            .collect();
+        assert_eq!(
+            resolved,
+            vec!["unterminated string", "missing colon"],
+            "stream order, not table order"
+        );
+        assert_eq!(sink.unresolved(), 0);
+        let owned = sink.into_diagnostics();
+        assert_eq!(owned.len(), 2);
+        assert_eq!(owned[0].range, 11..20);
+    }
+
+    #[test]
+    fn diag_collector_counts_unresolved_indexes() {
+        let table = fixed_table();
+        let output = pack(&[
+            Step::Error { diag: 99 }, // beyond the table
+            Step::Error { diag: 1 },
+            Step::Error { diag: 7 }, // beyond the table
+        ]);
+        let mut sink = super::DiagCollector::new(&table);
+        drive_sink(&output, &[], &mut sink).expect("drives");
+        assert_eq!(sink.diagnostics().len(), 1);
+        assert_eq!(sink.diagnostics()[0].message, "unexpected token");
+        assert_eq!(sink.unresolved(), 2, "out-of-range indexes are counted");
+    }
+
+    #[test]
+    fn diag_collector_rides_the_tee_alongside_token_sink() {
+        let table = fixed_table();
+        let output = pack(&[
+            Step::Enter { kind: 10 },
+            Step::Error { diag: 1 },
+            Step::Token { kind: 1, n_raw: 1 },
+            Step::Exit,
+        ]);
+        // Solo runs are the oracles.
+        let solo_tokens = {
+            let mut sink = TokenSink::default();
+            drive_sink(&output, &[], &mut sink).expect("drives");
+            sink.tokens.clone()
+        };
+        let solo_diags = {
+            let mut sink = super::DiagCollector::new(&table);
+            drive_sink(&output, &[], &mut sink).expect("drives");
+            sink.into_diagnostics()
+        };
+        let mut tee = TeeSink::new(TokenSink::default(), super::DiagCollector::new(&table));
+        drive_sink(&output, &[], &mut tee).expect("drives");
+        assert_eq!(tee.first.tokens, solo_tokens);
+        assert_eq!(tee.second.into_diagnostics(), solo_diags);
+    }
+
     // ---- fuzz contract: no sink panics on arbitrary packed streams ----
 
     /// Tiny deterministic LCG — the property tests stay reproducible
@@ -546,6 +697,13 @@ mod sink_tests {
     #[test]
     fn property_random_packed_streams_never_panic_and_match_oracles() {
         let mut rng = Lcg(0x0246_8ACE_1357_9BDF);
+        // The DiagCollector oracle's side table: four entries, so error
+        // indexes >= 4 stay unresolved (exactly the ones the collector
+        // must count, not resolve).
+        let mut table = crate::diagnostic::DiagTable::default();
+        for i in 0..4u32 {
+            table.push(format!("diag {i}"), i..i + 1);
+        }
         for _ in 0..300 {
             let mut steps = Vec::new();
             // Test-side oracles.
@@ -602,6 +760,36 @@ mod sink_tests {
             assert_eq!(
                 token.tokens.len(),
                 usize::try_from(tokens).expect("fits usize")
+            );
+
+            // DiagCollector: resolves exactly the in-table errors, in
+            // stream order; the rest are counted, not resolved.
+            let mut collector = DiagCollector::new(&table);
+            drive_sink(&output, &[], &mut collector).expect("drive never fails");
+            let expected_diags: Vec<_> = steps
+                .iter()
+                .filter_map(|step| match *step {
+                    Step::Error { diag } if diag < 4 => Some(diag),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                collector
+                    .diagnostics()
+                    .iter()
+                    .map(|d| d.message.as_str())
+                    .collect::<Vec<_>>(),
+                expected_diags
+                    .iter()
+                    .map(|diag| format!("diag {diag}"))
+                    .collect::<Vec<_>>(),
+                "resolved diagnostics follow the stream's errors"
+            );
+            assert_eq!(
+                collector.unresolved(),
+                usize::try_from(errors - u32::try_from(expected_diags.len()).unwrap_or(0))
+                    .expect("fits usize"),
+                "out-of-table indexes are counted"
             );
 
             // SkeletonSink: one record per matched enter/exit pair.
