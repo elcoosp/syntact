@@ -6,7 +6,7 @@
 //! copying — the §16.C.1 "typed views" default, implemented on the
 //! [`runtime_core::view::TreeView`] seam rather than via generated ASTs.
 //!
-//! # Tree shape (after [`parse`])
+//! # Tree shape (after [`crate::parse`])
 //!
 //! ```text
 //! ROOT_KIND
