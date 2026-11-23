@@ -12,7 +12,6 @@ authors.workspace = true
 kdl.workspace = true
 miette.workspace = true
 gir-ir.workspace = true
-thiserror.workspace = true
 
 [lints]
 workspace = true
