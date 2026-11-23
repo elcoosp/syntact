@@ -32,6 +32,41 @@ the [semver policy](docs/semver-policy.md).
   contract is real (dhat-gated at zero allocations) instead of
   documented-only.
 
+### Chunked validation — the balanced-plan seam
+
+- **structural-index**: `plan_chunks` now cuts chunks at TRUE depth-0
+  boundaries. The region index records the depth at each region's end
+  (braces do not split Code regions), so a region like ` } x` recorded
+  depth 0 while the position it starts at actually sits at depth 1 —
+  the old candidate filter picked such starts and produced unbalanced
+  chunks (e.g. `{ "s" } x` split into `{ "s" ` + ` } x`), breaking the
+  "each chunk is independently parseable" contract its own docs claim.
+  Boundaries are now chosen by the depth the boundary sits at (the
+  previous region's end depth), pinned by balance-property tests.
+- **structural-index**: the chunk-validation seam consuming those
+  plans — [`ChunkValidator`] (validate one chunk in isolation), the
+  built-in [`ChunkFaultScanner`] (a fresh fail-fast FaultScanner per
+  chunk), `validate_chunks` / `validate_chunks_with` /
+  `validate_plan`, and the merged [`ChunkReport`] (faults attributed
+  to their chunk, offsets rebased to source coordinates). Verdict
+  parity with the whole-source `validate_fast` (clean ⇔ clean; first
+  fault = whole-source fault) is pinned by differential + seeded
+  property tests, a criterion head-to-head, and the
+  `validate_chunks` consumer example. This is the shape the
+  region-parallel roadmap (P4) runs on.
+
+### Diagnostic resolution — the consumer-side error seam
+
+- **runtime-core**: [`DiagCollector`] — the sink that resolves the
+  event stream's deferred diag indexes through the parse's side table
+  into owned, stream-ordered `Diagnostic`s (message + byte range),
+  with an `unresolved` counter for out-of-table indexes. Every other
+  shipped sink treats the error channel as a count at most; tree-and-
+  diagnostics consumers now zip the collector into a `TeeSink` half
+  and get both from one `drive_sink` pass. Pinned by unit tests, a
+  property-oracle extension, a criterion bench group, and the
+  `diag_collector` consumer example (runtime-core's first example).
+
 ### Documentation and debt
 
 - Drift fixes: `drive_sink`'s error/tag docs, the persistent module's
@@ -42,7 +77,16 @@ the [semver policy](docs/semver-policy.md).
   the stale issue-044 pointer in the workspace lint rationale.
 - Debt: the duplicated `#[cfg(test)]` banner in `lr-shadow`'s lower
   module removed; the vacuous u32-guard test in `runtime-core`'s input
-  layer rewritten to assert what it actually verifies.
+  layer rewritten to assert what it actually verifies; gir-syntax's
+  unused `thiserror` dependency dropped; the bare `unreachable!()` in
+  codegen-rust's pattern emitter now states its narrowing invariant.
+- Drift: the roadmap's "persistent red mode is a cargo feature of
+  runtime-core" claim corrected (runtime-core defines no cargo
+  features; the merge is single-threaded caller-side parallelism
+  today) and §12.2's gantt annotated with the compressed actual
+  delivery (issues 001–094 shipped 2026-11-02 → 2026-11-23);
+  packs-json's `parse` doc no longer claims it returns the diagnostic
+  side table (it returns the tree only).
 
 ### Compiler loop — descent-lower (issue 043)
 
