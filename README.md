@@ -221,7 +221,7 @@ queries, recovery — read [the book](docs/book/SUMMARY.md).
 - [Architecture and roadmap](docs/architecture-and-roadmap.md) — the full design with primary-source
   evidence pointers (oxc, tree-sitter, rust-analyzer, rowan, grmtools, lezer) and architecture decision records.
 - [Cookbook recipes](docs/cookbook/recipes/) — tested, executable examples: parsing, the event stream,
-  incremental reparse, queries, and recovery planning.
+  incremental reparse, queries, recovery planning, and the generated parser.
 - [Semver policy](docs/semver-policy.md) and [API snapshot](docs/api-snapshot.md) — what the 1.0 promise
   covers and the frozen inventory that enforces it.
 - [`crates/cli/src/lib.rs`](crates/cli/src/lib.rs) — the CLI is a pure function from arguments to exit
