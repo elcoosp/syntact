@@ -14,6 +14,7 @@ gir-ir.workspace = true
 gir-analysis.workspace = true
 lr-shadow.workspace = true
 runtime-core.workspace = true
+pack-registry.workspace = true
 packs-json.workspace = true
 packs-toml.workspace = true
 packs-python.workspace = true
