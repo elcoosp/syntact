@@ -1214,7 +1214,7 @@ impl<'a> Codegen<'a> {
                             "        if cur.is_some_and(|k| {arr}.contains(&k)) {{"
                         );
                     }
-                    _ => unreachable!(),
+                    _ => unreachable!("the outer arm already narrowed Peek/PeekSet"),
                 }
                 let _ = writeln!(self.out, "            self.pat_{child}(sync)");
                 let _ = writeln!(self.out, "        }} else {{");
