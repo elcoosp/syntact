@@ -20,11 +20,13 @@
 //! - **Version retention**: every published version stays alive as
 //!   long as any reader holds it; [`RedHandle::version`] walks the
 //!   retained chain.
-//! - **Parallel merge determinism**: [`parallel_query`] splits the
+//! - **Chunked merge determinism**: [`parallel_query`] splits the
 //!   token stream into chunks (the structural-index chunk plan shape),
-//!   runs a per-chunk predicate scan, and merges the results in
-//!   ascending start-offset order — the merged output is byte-for-byte
-//!   identical to the sequential scan, seeded-corpus tested.
+//!   scans each chunk, and merges the results in ascending
+//!   start-offset order — the merged output is byte-for-byte identical
+//!   to the sequential scan, seeded-corpus tested. The scan runs
+//!   single-threaded today; the chunk plan + pure per-chunk scan are
+//!   the seam a caller may parallelize (the merge stays deterministic).
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -191,11 +193,13 @@ fn merge(mut hits: Vec<Hit>) -> Vec<Hit> {
     hits
 }
 
-/// The parallel query mode: plan chunks, scan each (the per-worker
-/// pure step — the caller may fan these out across threads; the
-/// results are order-independent because the merge is deterministic),
-/// and merge. The result MUST equal the sequential scan — the tests
-/// pin that byte-for-byte on seeded corpora.
+/// The chunked query mode: plan chunks, scan each in this function
+/// (single-threaded today), and merge in ascending start-offset order.
+/// The result MUST equal the sequential scan — the tests pin that
+/// byte-for-byte on seeded corpora. Parallelism is a caller-side
+/// option: the chunk plan and the pure per-chunk scan compose into
+/// worker units, and the deterministic merge does not care about the
+/// completion order.
 #[must_use]
 pub fn parallel_query(tokens: &[(u16, Range<u32>)], wanted: u16, workers: usize) -> Vec<Hit> {
     let chunks = plan_chunks(tokens, workers);
