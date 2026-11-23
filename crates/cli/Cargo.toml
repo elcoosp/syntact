@@ -28,9 +28,7 @@ generated-json.workspace = true
 incremental.workspace = true
 packs-json.workspace = true
 query.workspace = true
-lr-shadow.workspace = true
 pretty_assertions.workspace = true
-runtime-core.workspace = true
 
 [lints]
 workspace = true
