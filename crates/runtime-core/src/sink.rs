@@ -6,11 +6,13 @@
 //! | Consumer | Implementation |
 //! |---|---|
 //! | validate sink | [`ValidationSink`] — counts + balance |
+//! | kind statistics | [`StatsSink`] — per-kind histograms, depth, bytes |
 //! | token sink | [`TokenSink`] — highlighting-class tools |
 //! | skeleton builder | [`SkeletonSink`] — kinds + spans, no trivia |
 //! | full CST builder | [`crate::tree::TreeBuilder`] — green/red trees (§7.6) |
 //! | streaming query matcher | the query crate's `QuerySink` — patterns run as the stream drives, zipped with tree-side sinks via [`TeeSink`] |
 //! | diagnostic resolution | [`DiagCollector`] — deferred indexes resolved to owned messages via the side table |
+//! | step-gated consumer | [`FilterSink`] — predicate decides which steps reach the inner sink |
 //! | incremental engine | splices `ReusedSubtree` records, then this trait (§7.7, Phase 3) |
 
 use std::ops::Range;
@@ -20,11 +22,11 @@ use crate::events::Output;
 
 /// A consumer of flattened parse output.
 ///
-/// Implemented by: validation counting, token collection, skeleton
-/// builder, green/red tree builder, the query crate's streaming
-/// `QuerySink` matcher, the [`DiagCollector`] diagnostic resolver, and
-/// the [`TeeSink`] combinator that runs two consumers over one pass
-/// (roadmap §7.2 table).
+/// Implemented by: validation counting, kind statistics, token
+/// collection, skeleton builder, green/red tree builder, the query
+/// crate's streaming `QuerySink` matcher, the [`DiagCollector`]
+/// diagnostic resolver, and the [`TeeSink`] and [`FilterSink`]
+/// combinators that shape multi-consumer passes (roadmap §7.2 table).
 pub trait Sink {
     /// Enter a node of `kind`.
     fn enter(&mut self, kind: crate::NodeKind);
@@ -182,6 +184,198 @@ pub struct ValidationSummary {
     /// Whether the stream was a well-formed forest
     /// (see [`ValidationSink::balanced`]).
     pub balanced: bool,
+}
+
+/// Per-kind statistics sink: what did the stream actually contain?
+///
+/// Where [`ValidationSink`] keeps O(1) totals, this sink trades
+/// O(max-kind-seen) memory for the per-kind breakdown: histograms for
+/// node and token kinds, the deepest enter/exit nesting, the total byte
+/// span the consumed token ranges cover, plus the totals and the error
+/// count. Grammar profiling, kind-coverage reports ("which kinds did
+/// the corpus exercise?") and corpus sizing all read off the final
+/// [`StreamStats`] snapshot instead of re-walking the tree.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StatsSink {
+    /// Per-node-kind enter counts, indexed by kind.
+    node_histogram: Vec<u32>,
+    /// Per-token-kind counts, indexed by kind.
+    token_histogram: Vec<u32>,
+    /// Total nodes entered.
+    nodes: u32,
+    /// Total tokens consumed.
+    tokens: u32,
+    /// Error events seen.
+    errors: u32,
+    /// Deepest enter/exit nesting reached.
+    max_depth: u32,
+    /// Current open-enter depth (guards the max tracker on underflow).
+    open_depth: u32,
+    /// Total bytes covered by the consumed token ranges.
+    token_bytes: u64,
+}
+
+/// Grow `histogram` so `kind` is in range, then count one event.
+fn bump(histogram: &mut Vec<u32>, kind: u16) {
+    let index = usize::from(kind);
+    if index >= histogram.len() {
+        histogram.resize(index + 1, 0);
+    }
+    histogram[index] += 1;
+}
+
+impl StatsSink {
+    /// Enter events recorded for `kind` (absent kinds read as zero).
+    #[must_use]
+    pub fn node_count(&self, kind: crate::NodeKind) -> u32 {
+        self.node_histogram
+            .get(usize::from(kind))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Token events recorded for `kind` (absent kinds read as zero).
+    #[must_use]
+    pub fn token_count(&self, kind: crate::TokenKind) -> u32 {
+        self.token_histogram
+            .get(usize::from(kind))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Total nodes entered.
+    #[must_use]
+    pub fn nodes(&self) -> u32 {
+        self.nodes
+    }
+
+    /// Total tokens consumed.
+    #[must_use]
+    pub fn tokens(&self) -> u32 {
+        self.tokens
+    }
+
+    /// Error events seen (the count; [`DiagCollector`] resolves the
+    /// messages).
+    #[must_use]
+    pub fn errors(&self) -> u32 {
+        self.errors
+    }
+
+    /// Deepest enter/exit nesting reached. Exit underflow does not
+    /// inflate the depth (the open-depth tracker saturates at zero).
+    #[must_use]
+    pub fn max_depth(&self) -> u32 {
+        self.max_depth
+    }
+
+    /// Total bytes covered by the consumed token ranges — zero on
+    /// streams driven without a range table (the driver synthesizes
+    /// zero-width ranges there; see [`drive_sink`]).
+    #[must_use]
+    pub fn token_bytes(&self) -> u64 {
+        self.token_bytes
+    }
+
+    /// Snapshot of the run's statistics (the borrowed counterpart of
+    /// [`Self::into_stats`]).
+    #[must_use]
+    pub fn stats(&self) -> StreamStats {
+        StreamStats {
+            node_histogram: self.node_histogram.clone(),
+            token_histogram: self.token_histogram.clone(),
+            nodes: self.nodes,
+            tokens: self.tokens,
+            errors: self.errors,
+            max_depth: self.max_depth,
+            token_bytes: self.token_bytes,
+        }
+    }
+
+    /// Consume the sink into its final statistics snapshot.
+    #[must_use = "the statistics snapshot is the whole point"]
+    pub fn into_stats(self) -> StreamStats {
+        StreamStats {
+            node_histogram: self.node_histogram,
+            token_histogram: self.token_histogram,
+            nodes: self.nodes,
+            tokens: self.tokens,
+            errors: self.errors,
+            max_depth: self.max_depth,
+            token_bytes: self.token_bytes,
+        }
+    }
+}
+
+impl Sink for StatsSink {
+    fn enter(&mut self, kind: crate::NodeKind) {
+        bump(&mut self.node_histogram, kind);
+        self.nodes += 1;
+        self.open_depth += 1;
+        if self.open_depth > self.max_depth {
+            self.max_depth = self.open_depth;
+        }
+    }
+
+    fn exit(&mut self) {
+        self.open_depth = self.open_depth.saturating_sub(1);
+    }
+
+    fn token(&mut self, kind: crate::TokenKind, range: Range<u32>, _n_raw: u8) {
+        bump(&mut self.token_histogram, kind);
+        self.tokens += 1;
+        // A malformed range table can hand the driver inverted pairs;
+        // they count zero bytes rather than panicking (or underflowing).
+        self.token_bytes += u64::from(range.end.saturating_sub(range.start));
+    }
+
+    fn error(&mut self, _diag: u32) {
+        self.errors += 1;
+    }
+}
+
+/// Owned snapshot of a [`StatsSink`] run: the per-kind histograms plus
+/// the totals, depth and byte-coverage scalars, in one record — the
+/// composition counterpart of [`ValidationSummary`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct StreamStats {
+    /// Per-node-kind enter counts, indexed by kind
+    /// (index >= len means the kind never occurred).
+    pub node_histogram: Vec<u32>,
+    /// Per-token-kind counts, indexed by kind
+    /// (index >= len means the kind never occurred).
+    pub token_histogram: Vec<u32>,
+    /// Total nodes entered.
+    pub nodes: u32,
+    /// Total tokens consumed.
+    pub tokens: u32,
+    /// Error events seen.
+    pub errors: u32,
+    /// Deepest enter/exit nesting reached.
+    pub max_depth: u32,
+    /// Total bytes covered by the consumed token ranges (zero without
+    /// a range table; see [`drive_sink`]).
+    pub token_bytes: u64,
+}
+
+impl StreamStats {
+    /// Enter events recorded for `kind` (absent kinds read as zero).
+    #[must_use]
+    pub fn node_count(&self, kind: crate::NodeKind) -> u32 {
+        self.node_histogram
+            .get(usize::from(kind))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Token events recorded for `kind` (absent kinds read as zero).
+    #[must_use]
+    pub fn token_count(&self, kind: crate::TokenKind) -> u32 {
+        self.token_histogram
+            .get(usize::from(kind))
+            .copied()
+            .unwrap_or(0)
+    }
 }
 
 /// One completed node of a skeleton tree (issue 024 `skeleton` mode):
@@ -361,11 +555,126 @@ impl<A: Sink, B: Sink> Sink for TeeSink<A, B> {
     }
 }
 
+/// A borrowed view of one [`Sink`] step, as shown to a [`FilterSink`]
+/// predicate (the borrow avoids materializing a token's `Range` clone
+/// for a step the gate may drop).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FilterStep<'a> {
+    /// A node enter of `kind` (see [`Sink::enter`]).
+    Enter {
+        /// The node kind being entered.
+        kind: crate::NodeKind,
+    },
+    /// A node exit (see [`Sink::exit`]).
+    Exit,
+    /// A token of `kind` covering `range` with `n_raw` raw tokens
+    /// (see [`Sink::token`]).
+    Token {
+        /// The token kind.
+        kind: crate::TokenKind,
+        /// The token's byte range (borrowed from the drive).
+        range: &'a Range<u32>,
+        /// Raw tokens folded into this step.
+        n_raw: u8,
+    },
+    /// A deferred diagnostic index (see [`Sink::error`]).
+    Error {
+        /// The side-table index of the diagnostic.
+        diag: u32,
+    },
+}
+
+/// A predicate-gated forwarding decorator: every [`Sink`] step is shown
+/// to the gate first, and only accepted steps reach [`FilterSink::inner`]
+/// — the filtering half of the §7.2 many-consumers-over-one-stream
+/// contract. Drop noisy diagnostics (`FilterStep::Error` by index),
+/// restrict a token pass to the kinds a tool cares about, or carve
+/// down to one subtree's steps, all without a second drive.
+///
+/// The gate is a `FnMut(&FilterStep<'_>) -> bool` and sees *every*
+/// step — dropped steps are simply not forwarded. Structural steps
+/// need care: dropping an [`enter`](Sink::enter) or [`exit`](Sink::exit)
+/// shifts the balance the inner sink observes (a tree builder left
+/// open, a skeleton with shifted spans) — the same responsibility the
+/// [`drive_sink`] driver already leaves to the sinks for malformed
+/// streams, and token/cursor-dependent sinks (`SkeletonSink`, the
+/// tree builder) read byte positions from the token ranges the gate
+/// lets through.
+#[derive(Debug)]
+pub struct FilterSink<P, S> {
+    /// The gate: returns true for every step that forwards to `inner`.
+    predicate: P,
+    /// The gated consumer.
+    inner: S,
+}
+
+impl<P, S> FilterSink<P, S> {
+    /// Gate `inner` behind `predicate`.
+    #[must_use]
+    pub fn new(predicate: P, inner: S) -> Self {
+        Self { predicate, inner }
+    }
+
+    /// The gated consumer (post-drive reads, tee zips).
+    #[must_use]
+    pub fn inner(&self) -> &S {
+        &self.inner
+    }
+
+    /// The gated consumer, mutably (drive-through construction).
+    pub fn inner_mut(&mut self) -> &mut S {
+        &mut self.inner
+    }
+
+    /// Consume the decorator into its gated consumer.
+    #[must_use = "the gated consumer is the whole point"]
+    pub fn into_inner(self) -> S {
+        self.inner
+    }
+}
+
+impl<P, S> Sink for FilterSink<P, S>
+where
+    P: FnMut(&FilterStep<'_>) -> bool,
+    S: Sink,
+{
+    fn enter(&mut self, kind: crate::NodeKind) {
+        if (self.predicate)(&FilterStep::Enter { kind }) {
+            self.inner.enter(kind);
+        }
+    }
+
+    fn exit(&mut self) {
+        if (self.predicate)(&FilterStep::Exit) {
+            self.inner.exit();
+        }
+    }
+
+    fn token(&mut self, kind: crate::TokenKind, range: Range<u32>, n_raw: u8) {
+        if (self.predicate)(&FilterStep::Token {
+            kind,
+            range: &range,
+            n_raw,
+        }) {
+            self.inner.token(kind, range, n_raw);
+        }
+    }
+
+    fn error(&mut self, diag: u32) {
+        if (self.predicate)(&FilterStep::Error { diag }) {
+            self.inner.error(diag);
+        }
+    }
+}
+
 #[cfg(test)]
 mod sink_tests {
     use std::ops::Range;
 
-    use super::{DiagCollector, SkeletonSink, TeeSink, TokenSink, ValidationSink};
+    use super::{
+        DiagCollector, FilterSink, FilterStep, SkeletonSink, StatsSink, TeeSink, TokenSink,
+        ValidationSink,
+    };
     use crate::events::{Output, Step};
     use crate::sink::drive_sink;
 
@@ -559,6 +868,189 @@ mod sink_tests {
         assert_eq!(sink.nodes[0].kind, 1);
     }
 
+    // ---- StatsSink: per-kind histograms, depth, byte coverage ----
+
+    #[test]
+    fn stats_sink_counts_per_kind_totals_depth_and_bytes() {
+        let (output, ranges) = fixed_output();
+        let mut sink = StatsSink::default();
+        drive_sink(&output, &ranges, &mut sink).expect("drives");
+        assert_eq!(sink.node_count(10), 1);
+        assert_eq!(sink.node_count(11), 1);
+        assert_eq!(sink.node_count(12), 0, "absent kinds read as zero");
+        assert_eq!(sink.token_count(1), 1);
+        assert_eq!(sink.token_count(2), 1);
+        assert_eq!(sink.token_count(3), 0);
+        assert_eq!(sink.nodes(), 2);
+        assert_eq!(sink.tokens(), 2);
+        assert_eq!(sink.errors(), 0);
+        assert_eq!(sink.max_depth(), 2, "two nested enters");
+        assert_eq!(sink.token_bytes(), 5, "ranges 0..2 + 2..5");
+    }
+
+    #[test]
+    fn stats_sink_snapshot_round_trips_through_into_stats() {
+        let (output, ranges) = fixed_output();
+        let mut sink = StatsSink::default();
+        drive_sink(&output, &ranges, &mut sink).expect("drives");
+        let borrowed = sink.stats();
+        let owned = sink.into_stats();
+        assert_eq!(
+            borrowed, owned,
+            "the borrowed view and the consumed snapshot agree"
+        );
+        assert_eq!(owned.node_count(10), 1);
+        assert_eq!(owned.token_count(2), 1);
+        assert_eq!(owned.nodes, 2);
+        assert_eq!(owned.tokens, 2);
+        assert_eq!(owned.errors, 0);
+        assert_eq!(owned.max_depth, 2);
+        assert_eq!(owned.token_bytes, 5);
+    }
+
+    #[test]
+    fn stats_sink_survives_error_streams_and_exit_underflow() {
+        let output = pack(&[
+            Step::Enter { kind: 1 },
+            Step::Enter { kind: 2 },
+            Step::Error { diag: 3 },
+            Step::Exit,
+            Step::Exit,
+            Step::Exit, // underflow: no open node to close
+            Step::Enter { kind: 1 },
+            Step::Exit,
+        ]);
+        let mut sink = StatsSink::default();
+        drive_sink(&output, &[], &mut sink).expect("malformed stream must not panic");
+        assert_eq!(sink.node_count(1), 2);
+        assert_eq!(sink.node_count(2), 1);
+        assert_eq!(sink.errors(), 1);
+        assert_eq!(sink.max_depth(), 2, "underflow must not inflate the depth");
+        assert_eq!(
+            sink.token_bytes(),
+            0,
+            "no range table supplied: zero-width synthesis counts no bytes"
+        );
+    }
+
+    #[test]
+    fn stats_sink_rides_the_tee_alongside_validation() {
+        let (output, ranges) = fixed_output();
+        let solo = {
+            let mut sink = StatsSink::default();
+            drive_sink(&output, &ranges, &mut sink).expect("drives");
+            sink.stats()
+        };
+        let mut tee = TeeSink::new(ValidationSink::default(), StatsSink::default());
+        drive_sink(&output, &ranges, &mut tee).expect("drives");
+        assert_eq!(tee.first.summary().nodes, 2, "validation half unaffected");
+        assert_eq!(tee.second.stats(), solo, "stats half matches its solo run");
+    }
+
+    // ---- FilterSink: predicate-gated forwarding (§7.2 filtering half) ----
+
+    #[test]
+    fn filter_sink_forwards_only_accepted_token_steps() {
+        let (output, ranges) = fixed_output();
+        // Keep token kind 1, drop token kind 2; structure passes as-is.
+        let mut sink = FilterSink::new(
+            |step: &FilterStep<'_>| match *step {
+                FilterStep::Token { kind, .. } => kind == 1,
+                _ => true,
+            },
+            TokenSink::default(),
+        );
+        drive_sink(&output, &ranges, &mut sink).expect("drives");
+        assert_eq!(sink.into_inner().tokens, vec![(1, 0..2)]);
+    }
+
+    #[test]
+    fn filter_sink_can_drop_diagnostics_only() {
+        let output = pack(&[
+            Step::Enter { kind: 1 },
+            Step::Error { diag: 3 },
+            Step::Token { kind: 1, n_raw: 1 },
+            Step::Error { diag: 7 },
+            Step::Exit,
+        ]);
+        let mut sink = FilterSink::new(
+            |step: &FilterStep<'_>| !matches!(*step, FilterStep::Error { diag: 7 }),
+            ValidationSink::default(),
+        );
+        drive_sink(&output, &[], &mut sink).expect("drives");
+        let validation = sink.into_inner();
+        assert_eq!(validation.errors, 1, "only the dropped diag index vanished");
+        assert_eq!(validation.nodes, 1);
+        assert_eq!(validation.tokens, 1);
+        assert!(
+            validation.balanced(),
+            "structure is untouched by the filter"
+        );
+    }
+
+    #[test]
+    fn filter_sink_identity_predicate_matches_the_solo_run() {
+        let (output, ranges) = fixed_output();
+        let solo = {
+            let mut sink = ValidationSink::default();
+            drive_sink(&output, &ranges, &mut sink).expect("drives");
+            sink.summary()
+        };
+        let mut sink = FilterSink::new(|_: &FilterStep<'_>| true, ValidationSink::default());
+        drive_sink(&output, &ranges, &mut sink).expect("drives");
+        assert_eq!(
+            sink.into_inner().summary(),
+            solo,
+            "an always-true filter is a no-op"
+        );
+    }
+
+    #[test]
+    fn filter_sink_exposes_inner_by_ref_and_by_value() {
+        let (output, ranges) = fixed_output();
+        let mut sink = FilterSink::new(
+            |step: &FilterStep<'_>| {
+                matches!(*step, FilterStep::Enter { kind: 10 } | FilterStep::Exit)
+                    || matches!(*step, FilterStep::Token { kind: 1, .. })
+            },
+            TokenSink::default(),
+        );
+        drive_sink(&output, &ranges, &mut sink).expect("drives");
+        assert_eq!(
+            sink.inner().tokens.len(),
+            1,
+            "the kind-2 token stayed behind the gate"
+        );
+        let inner = sink.into_inner();
+        assert_eq!(inner.tokens, vec![(1, 0..2)]);
+    }
+
+    #[test]
+    fn filter_sink_gates_stats_inside_the_tee() {
+        let (output, ranges) = fixed_output();
+        // Stats half only sees token kind 1; validation half rides the
+        // tee unfiltered (the filter wraps one half, not the drive).
+        let mut tee = TeeSink::new(
+            FilterSink::new(
+                |step: &FilterStep<'_>| match *step {
+                    FilterStep::Token { kind, .. } => kind == 1,
+                    _ => true,
+                },
+                StatsSink::default(),
+            ),
+            ValidationSink::default(),
+        );
+        drive_sink(&output, &ranges, &mut tee).expect("drives");
+        assert_eq!(tee.first.inner().token_count(1), 1);
+        assert_eq!(tee.first.inner().token_count(2), 0, "dropped by the filter");
+        assert_eq!(tee.first.inner().nodes(), 2, "structure still counts");
+        assert_eq!(
+            tee.second.summary().tokens,
+            2,
+            "the other tee half is unfiltered"
+        );
+    }
+
     // ---- TeeSink: one drive, two consumers (§7.2 many-sinks contract) ----
 
     #[test]
@@ -709,6 +1201,7 @@ mod sink_tests {
             // Test-side oracles.
             let (mut enters, mut tokens, mut errors) = (0u32, 0u32, 0u32);
             let (mut depth, mut underflow, mut pops) = (0u32, false, 0u32);
+            let mut max_depth = 0u32;
             for _ in 0..8 + rng.below(40) {
                 match rng.below(6) {
                     0 | 1 => {
@@ -716,6 +1209,9 @@ mod sink_tests {
                         steps.push(Step::Enter { kind });
                         enters += 1;
                         depth += 1;
+                        if depth > max_depth {
+                            max_depth = depth;
+                        }
                     }
                     2 => {
                         steps.push(Step::Exit);
@@ -802,6 +1298,50 @@ mod sink_tests {
             for node in &skeleton.nodes {
                 assert!(node.span.start <= node.span.end, "spans stay ordered");
             }
+
+            // StatsSink: totals + depth + histograms all agree with the
+            // oracles (empty range table: zero-width synthesis, no bytes).
+            let mut stats = StatsSink::default();
+            drive_sink(&output, &[], &mut stats).expect("drive never fails");
+            assert_eq!(stats.nodes(), enters);
+            assert_eq!(stats.tokens(), tokens);
+            assert_eq!(stats.errors(), errors);
+            assert_eq!(stats.max_depth(), max_depth);
+            assert_eq!(stats.token_bytes(), 0, "no ranges, no counted bytes");
+            let snapshot = stats.into_stats();
+            assert_eq!(
+                snapshot.node_histogram.iter().sum::<u32>(),
+                enters,
+                "node histogram sums to the enter total"
+            );
+            assert_eq!(
+                snapshot.token_histogram.iter().sum::<u32>(),
+                tokens,
+                "token histogram sums to the token total"
+            );
+
+            // FilterSink: even-kind token gate — the inner token sink
+            // sees exactly the accepted steps, structure passes whole.
+            let mut filtered = FilterSink::new(
+                |step: &FilterStep<'_>| match *step {
+                    FilterStep::Token { kind, .. } => kind % 2 == 0,
+                    _ => true,
+                },
+                TokenSink::default(),
+            );
+            drive_sink(&output, &[], &mut filtered).expect("drive never fails");
+            let expected_kept = steps
+                .iter()
+                .filter_map(|step| match *step {
+                    Step::Token { kind, .. } if kind % 2 == 0 => Some(kind),
+                    _ => None,
+                })
+                .count();
+            assert_eq!(
+                filtered.into_inner().tokens.len(),
+                expected_kept,
+                "the gate forwards exactly the even-kind tokens"
+            );
         }
     }
 }
