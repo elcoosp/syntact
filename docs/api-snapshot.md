@@ -48,6 +48,17 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 
 ## crates/codegen-rust
 
+- src/descent.rs: pub enum EmitError {
+- src/descent.rs: pub struct EmittedFile {
+- src/descent.rs: pub path: String,
+- src/descent.rs: pub contents: String,
+- src/descent.rs: pub struct EmittedCrate {
+- src/descent.rs: pub name: String,
+- src/descent.rs: pub grammar_name: String,
+- src/descent.rs: pub grammar_version: String,
+- src/descent.rs: pub files: Vec<EmittedFile>,
+- src/descent.rs: pub fn file(&self, path: &str) -> Option<&str> {
+- src/descent.rs: pub fn emit_crate(
 - src/emit.rs: pub struct Emitter {
 - src/emit.rs: pub fn new(grammar_name: &str, grammar_version: &str) -> Self {
 - src/emit.rs: pub fn static_table(&mut self, name: &str, table: &CompactTable) {
@@ -55,8 +66,10 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/emit.rs: pub fn const_u32(&mut self, name: &str, value: u32) {
 - src/emit.rs: pub fn lookup_fn(&mut self, fn_name: &str, table_name: &str) {
 - src/emit.rs: pub fn finish(self) -> String {
+- src/lib.rs: pub mod descent;
 - src/lib.rs: pub mod emit;
 - src/lib.rs: pub mod table;
+- src/lib.rs: pub use descent::{EmitError, EmittedCrate, EmittedFile, emit_crate};
 - src/lib.rs: pub use emit::Emitter;
 - src/lib.rs: pub use table::CompactTable;
 - src/table.rs: pub struct CompactTable {
@@ -130,6 +143,10 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub trivia_kind: Option<u16>,
 - src/lib.rs: pub fn lower(grammar: &Grammar) -> Result<Lowered, LowerError> {
 - src/lib.rs: pub fn feed(&self, scanner: &Scanner, source: &str) -> Vec<(u16, Range<u32>)> {
+
+## crates/generated-json
+
+(no public items)
 
 ## crates/gir-analysis
 
@@ -627,6 +644,9 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/scan.rs: pub enum Lexeme {
 - src/scan.rs: pub struct Scanner {
 - src/scan.rs: pub fn compile(grammar: &Grammar) -> Result<Scanner, LexError> {
+- src/scan.rs: pub fn from_parts(dfa: Dfa, trivia: Vec<bool>) -> Self {
+- src/scan.rs: pub fn is_trivia(&self, kind: u16) -> bool {
+- src/scan.rs: pub fn dfa(&self) -> &Dfa {
 - src/scan.rs: pub fn scan(&self, source: &str) -> Vec<Lexeme> {
 - src/scan.rs: pub fn longest_match(&self, source: &str, pos: usize) -> Option<(usize, u16)> {
 - src/scan.rs: pub fn relex_one(&self, source: &str, offset: usize) -> Option<Lexeme> {
