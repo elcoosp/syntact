@@ -6,6 +6,47 @@ the [semver policy](docs/semver-policy.md).
 
 ## [Unreleased]
 
+### Gated drives — the step-gated early-exit seam
+
+- **runtime-core**: [`DriveGate`] + [`drive_sink_until`] — the strict
+  driver contract `drive_sink`'s docs reserve their failure channel
+  for: every step is shown to the gate before it reaches the sink, a
+  `ControlFlow::Break` halts the drive with the rejected step
+  undelivered, and the run returns a copyable [`DriveStats`]
+  (`forwarded`, `stopped_early`) instead of nothing. The trait
+  completes the stream-side gate family — [`FilterSink`] shapes what a
+  sink receives, a gate decides whether the drive continues at all —
+  mirroring the `ControlFlow` convention already on
+  `structural_index::RegionSink` and `view::visit::Visitor`. Blanket
+  impl for `FnMut(&FilterStep) -> ControlFlow<()>` closures;
+  [`MaxErrors`] is the built-in error-budget gate (let the first `max`
+  diagnostics through, halt on the one that exceeds). Pinned by
+  parity/early-exit/budget/truncation-differential tests; benchmarked
+  baseline vs pass-through vs early-stop
+  (`bench/benches/drive_gate.rs`); consumer example
+  `crates/runtime-core/examples/fail_fast.rs`
+  (`cargo run -p runtime-core --example fail_fast`).
+
+### Tree-level changed ranges (§7.7 downstream invalidation)
+
+- **incremental**: [`tree_diff`] — the green-tree counterpart of the
+  token-level `changed_ranges`: a parallel old/new walk classifies every
+  compared subtree pair as `Matches`/`MayDiffer`/`Differs` (the
+  tree-sitter `get_changed_ranges.c` shape) and reports the coalesced
+  new-source byte ranges where the trees disagree. Identical prefix/
+  suffix absorption keeps insertions and token edits precise; a refused
+  middle keeps multi-edit reports conservative-sound. [`DiffVisitor`] is
+  the observability seam (one event per comparison, `ControlFlow` early
+  exit — the `RegionSink` convention); [`RangeCollector`] is the
+  built-in consumer and `changed_tree_ranges` the convenience entry
+  point. Pinned by hand-built unit suites, real JSON pack integration
+  tests (token-precision, insertion, value reshape), structural
+  invariants, and a 150-round seeded fuzz with a determinism re-run and
+  a shape-isomorphic single-token precision gate. Benchmarked
+  identical/edit/brute-force (`bench/benches/tree_diff.rs`); consumer
+  example `crates/incremental/examples/tree_diff.rs`
+  (`cargo run -p incremental --example tree_diff`).
+
 ### Sink statistics + predicate-gated filtering
 
 - **runtime-core**: [`StatsSink`] — the per-kind statistics consumer:
