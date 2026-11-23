@@ -66,8 +66,9 @@ pub enum WalkEvent<'t> {
 
 /// A forward-only cursor over a [`GreenNode`].
 ///
-/// Constructed with [`GreenCursor::new`] over the root; [`GreenCursor::next`]
-/// advances the walk. The cursor borrows the root `Arc<GreenNode>` for the
+/// Constructed with [`GreenCursor::new`] over the root;
+/// [`GreenCursor::next_event`] advances the walk. The cursor borrows the
+/// root `Arc<GreenNode>` for the
 /// duration of the walk (`'t`) and stores `&'t GreenNode` references to each
 /// node on its path stack — no `Arc::clone` per step, no heap allocation.
 /// The yielded [`WalkEvent`] borrows borrow those `'t`-lifetime references,
@@ -110,8 +111,8 @@ enum Action<'t> {
 }
 
 impl<'t> GreenCursor<'t> {
-    /// Start a cursor at the root. The first [`next`](Self::next) yields
-    /// [`WalkEvent::Enter`] for `root`.
+    /// Start a cursor at the root. The first [`next_event`](Self::next_event)
+    /// yields [`WalkEvent::Enter`] for `root`.
     #[must_use]
     pub fn new(root: &'t Arc<GreenNode>) -> Self {
         Self {
