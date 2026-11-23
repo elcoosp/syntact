@@ -66,6 +66,14 @@ name = "query_sink"
 harness = false
 
 [[bench]]
+name = "stats_sink"
+harness = false
+
+[[bench]]
+name = "filter_sink"
+harness = false
+
+[[bench]]
 name = "structural_validate"
 harness = false
 
