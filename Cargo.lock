@@ -136,7 +136,9 @@ dependencies = [
  "packs-sql",
  "packs-toml",
  "packs-typescript",
+ "query",
  "runtime-core",
+ "structural-index",
 ]
 
 [[package]]
