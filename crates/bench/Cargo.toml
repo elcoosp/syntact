@@ -8,13 +8,6 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
-[dependencies]
-harness.workspace = true
-runtime-core.workspace = true
-packs-json.workspace = true
-lsp.workspace = true
-gir-syntax.workspace = true
-
 [dev-dependencies]
 criterion.workspace = true
 codegen-rust.workspace = true
@@ -24,15 +17,19 @@ dhat.workspace = true
 generated-json.workspace = true
 gir-syntax.workspace = true
 lexgen.workspace = true
+lsp.workspace = true
+pack-registry.workspace = true
 packs-c.workspace = true
 packs-csv.workspace = true
 packs-ini.workspace = true
+packs-json.workspace = true
 packs-markdown.workspace = true
 packs-python.workspace = true
 packs-rust.workspace = true
 packs-sql.workspace = true
 packs-toml.workspace = true
 packs-typescript.workspace = true
+runtime-core.workspace = true
 
 [[bench]]
 name = "json"
@@ -56,6 +53,10 @@ harness = false
 
 [[bench]]
 name = "generated_json"
+harness = false
+
+[[bench]]
+name = "pack_registry"
 harness = false
 
 [lints]
