@@ -33,8 +33,11 @@ pub mod kinds {
     pub const NULL: u16 = 7;
 }
 
-/// Parse JSON with the reference parser, returning the green tree plus the
-/// diagnostic side table (implemented in issue 019).
+/// Parse JSON with the reference parser, returning the green tree
+/// (implemented in issue 019). The diagnostic side table stays
+/// internal to the reference parser; hosts that need the messages
+/// resolve the event stream's deferred diag indexes themselves —
+/// [`runtime_core::sink::DiagCollector`] is the built-in resolver.
 ///
 /// # Errors
 /// Never fails structurally; malformed input produces ERROR events and a
