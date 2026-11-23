@@ -532,6 +532,7 @@ pub enum Event {                       // 8 bytes (RA-proven shape, event.rs:12-
 | streaming query matcher | runs compiled query steps during emission (§7.8) |
 | diagnostic resolution | deferred indexes resolved to owned messages via the side table (`runtime-core::sink::DiagCollector`) |
 | step-gated consumer | predicate decides which steps reach the inner sink (`runtime-core::sink::FilterSink`) |
+| step-gated early exit | a `DriveGate` halts the drive before a rejected step reaches the sink (`runtime-core::sink::drive_sink_until`; `MaxErrors` is the error budget) |
 | incremental engine | splices `ReusedSubtree` records into the stream |
 
 Trivia never enters the event stream (biome lesson, §2.4): the token source accumulates `(kind, range, trailing)` trivia records; the tree sink splits leading/trailing at newlines. Ruff's parallel full-token vector is offered as a mode for tools that want raw tokens.
@@ -644,7 +645,7 @@ Pipeline for `reparse(old_tree, edits: &[Edit], new_source)`:
 3. **Fragment set**: old tree cut into fragments with 128-char edit margins and openness flags (lezer); fragments adjacent to edits are open.
 4. **Main loop** = normal parse with the **reuse cursor** walking fragments. A subtree is reusable iff all hold (adapted from verified tree-sitter predicates §2.2): byte offset matches; `!has_changes && !is_error && !is_missing && !is_fragile`; `ext_scanner_digest` equals current; first-leaf lex mode equals current state's mode; context hash matches (lezer) when grammar declares `context_key`; included-range difference check; `end + recorded_lookahead_margin < fragment.to` (lezer). Reused subtrees are *speculative*: if the automaton rejects the continuation, the reused node is broken down and its children retried (tree-sitter `breakdown_top_of_stack` behavior).
 5. **Splice**: reuse is recorded as `ReusedSubtree` in the event stream; tree builder re-links green nodes (structural sharing) instead of re-emitting.
-6. **Changed ranges** for downstream invalidation: parallel old/new cursor diff with `Matches/MayDiffer/Differs` predicates (tree-sitter `get_changed_ranges.c` classification list verbatim).
+6. **Changed ranges** for downstream invalidation: parallel old/new cursor diff with `Matches/MayDiffer/Differs` predicates (tree-sitter `get_changed_ranges.c` classification list verbatim) — shipped as `incremental::tree_diff` (`diff_trees` + `DiffVisitor` + `changed_tree_ranges`).
 
 **Correctness gate:** `reparse(edit(x)) == fresh_parse(x)` — tree equality including error nodes and trivia — fuzzed from day 1 of the incremental engine (10k+ edit sequences per grammar per CI run; the #1 way parser projects die is silent reuse divergence).
 
