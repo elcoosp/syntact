@@ -38,9 +38,12 @@ fn post(path: &str, body: &[u8]) -> Request {
 fn get_packs_lists_registered_packs_in_order() {
     let resp = route(&registry(), 1024, &get("/packs"));
     assert_eq!(resp.status, 200);
+    // The shared pack-registry roster (issue 046): all ten packs,
+    // deterministic language order — the playground used to register
+    // only seven (ini/csv/markdown were unreachable).
     assert_eq!(
         resp.body,
-        "{\"packs\":[\"json\",\"toml\",\"python\",\"typescript\",\"rust\",\"c\",\"sql\"]}"
+        "{\"packs\":[\"json\",\"toml\",\"python\",\"typescript\",\"rust\",\"c\",\"sql\",\"ini\",\"csv\",\"markdown\"]}"
     );
 }
 
@@ -110,6 +113,35 @@ fn unknown_pack_is_404() {
     );
     assert_eq!(resp.status, 404);
     assert_eq!(resp.body, "{\"error\":\"unknown pack: cobol\"}");
+}
+
+#[test]
+fn community_packs_parse_through_the_shared_registry() {
+    // The three packs the playground could not reach before the
+    // pack-registry adoption (issue 046) parse like the flagship ones.
+    let ini = route(
+        &registry(),
+        1024,
+        &post("/parse", br#"{"pack":"ini","source":"[section]\na = 1\n"}"#),
+    );
+    assert_eq!(ini.status, 200);
+    assert!(ini.body.contains("\"ok\": true"), "{}", ini.body);
+
+    let markdown = route(
+        &registry(),
+        1024,
+        &post("/parse", br##"{"pack":"markdown","source":"# Title\n"}"##),
+    );
+    assert_eq!(markdown.status, 200);
+    assert!(markdown.body.contains("\"ok\": true"), "{}", markdown.body);
+
+    let csv = route(
+        &registry(),
+        1024,
+        &post("/parse", br#"{"pack":"csv","source":"a,b\n1,2\n"}"#),
+    );
+    assert_eq!(csv.status, 200);
+    assert!(csv.body.contains("\"ok\": true"), "{}", csv.body);
 }
 
 // ---------------------------------------------------------------------------
