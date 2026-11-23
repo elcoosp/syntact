@@ -6,6 +6,7 @@ members = [
     "crates/codegen-rust",
     "crates/descent",
     "crates/descent-lower",
+    "crates/generated-json",
     "crates/gir-analysis",
     "crates/gir-ir",
     "crates/gir-syntax",
@@ -76,6 +77,10 @@ type_complexity = "allow"
 # The descent engine threads the sync set through recursion — the sync
 # parameter drives recovery depth, which the lint cannot see.
 only_used_in_recursion = "allow"
+# The generated-json crate's DFA tables are machine-generated dense u32
+# sentinels (0xFFFF_FFFF = None); underscore separators would obscure the
+# row structure the codegen emits (issue 045, ADR-013).
+unreadable_literal = "allow"
 
 [workspace.dependencies]
 # Internal crates (single source of truth for intra-workspace deps)
@@ -93,6 +98,7 @@ packs-json = { path = "packs/json" }
 cli = { path = "crates/cli" }
 descent = { path = "crates/descent" }
 descent-lower = { path = "crates/descent-lower" }
+generated-json = { path = "crates/generated-json" }
 incremental = { path = "crates/incremental" }
 query = { path = "crates/query" }
 structural-index = { path = "crates/structural-index" }
