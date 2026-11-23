@@ -16,6 +16,7 @@ descent-lower.workspace = true
 dhat.workspace = true
 generated-json.workspace = true
 gir-syntax.workspace = true
+incremental.workspace = true
 lexgen.workspace = true
 lsp.workspace = true
 pack-registry.workspace = true
@@ -75,6 +76,14 @@ harness = false
 
 [[bench]]
 name = "structural_validate"
+harness = false
+
+[[bench]]
+name = "tree_diff"
+harness = false
+
+[[bench]]
+name = "drive_gate"
 harness = false
 
 [lints]
