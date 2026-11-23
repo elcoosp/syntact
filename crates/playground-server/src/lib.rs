@@ -28,69 +28,11 @@ pub mod wire;
 
 pub use http::{ReqError, Server, parse_request, serialize_response};
 
-use std::sync::Arc;
-
-use runtime_core::tree::GreenNode;
-
-/// A registered pack: name + reference-parser entry point.
-#[derive(Clone, Copy)]
-pub struct PackEntry {
-    /// Pack name as used in `/parse` requests.
-    pub name: &'static str,
-    /// The lossless reference parser.
-    pub parse: fn(&str) -> Result<Arc<GreenNode>, String>,
-}
-
-/// The pack registry (fixed registration order — deterministic).
-#[derive(Default)]
-pub struct Registry {
-    packs: Vec<PackEntry>,
-}
-
-impl Registry {
-    /// An empty registry.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Register a pack.
-    pub fn register(&mut self, entry: PackEntry) {
-        self.packs.push(entry);
-    }
-
-    /// The reference registry: every shipped pack, in language order.
-    #[must_use]
-    pub fn reference() -> Self {
-        type ParseFn = fn(&str) -> Result<Arc<GreenNode>, String>;
-        let mut registry = Self::new();
-        let entries: [(&'static str, ParseFn); 7] = [
-            ("json", packs_json::parse),
-            ("toml", packs_toml::parse),
-            ("python", packs_python::parse),
-            ("typescript", packs_typescript::parse),
-            ("rust", packs_rust::parse),
-            ("c", packs_c::parse),
-            ("sql", packs_sql::parse),
-        ];
-        for (name, parse) in entries {
-            registry.register(PackEntry { name, parse });
-        }
-        registry
-    }
-
-    /// Look up a pack by name.
-    #[must_use]
-    pub fn get(&self, name: &str) -> Option<&PackEntry> {
-        self.packs.iter().find(|entry| entry.name == name)
-    }
-
-    /// Registered pack names in registration order.
-    #[must_use]
-    pub fn names(&self) -> Vec<&str> {
-        self.packs.iter().map(|entry| entry.name).collect()
-    }
-}
+// The registry is the shared pack-registry seam (issue 046): one
+// canonical ten-pack roster under this crate's original public names,
+// so `/parse` reaches every shipped language (the playground used to
+// register only seven — ini, csv, and markdown were unreachable).
+pub use pack_registry::{PackEntry, PackRegistry as Registry};
 
 /// HTTP methods the router distinguishes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
