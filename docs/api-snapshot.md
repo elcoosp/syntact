@@ -1196,6 +1196,26 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/sink.rs: pub tokens: u32,
 - src/sink.rs: pub errors: u32,
 - src/sink.rs: pub balanced: bool,
+- src/sink.rs: pub struct StatsSink {
+- src/sink.rs: pub fn node_count(&self, kind: crate::NodeKind) -> u32 {
+- src/sink.rs: pub fn token_count(&self, kind: crate::TokenKind) -> u32 {
+- src/sink.rs: pub fn nodes(&self) -> u32 {
+- src/sink.rs: pub fn tokens(&self) -> u32 {
+- src/sink.rs: pub fn errors(&self) -> u32 {
+- src/sink.rs: pub fn max_depth(&self) -> u32 {
+- src/sink.rs: pub fn token_bytes(&self) -> u64 {
+- src/sink.rs: pub fn stats(&self) -> StreamStats {
+- src/sink.rs: pub fn into_stats(self) -> StreamStats {
+- src/sink.rs: pub struct StreamStats {
+- src/sink.rs: pub node_histogram: Vec<u32>,
+- src/sink.rs: pub token_histogram: Vec<u32>,
+- src/sink.rs: pub nodes: u32,
+- src/sink.rs: pub tokens: u32,
+- src/sink.rs: pub errors: u32,
+- src/sink.rs: pub max_depth: u32,
+- src/sink.rs: pub token_bytes: u64,
+- src/sink.rs: pub fn node_count(&self, kind: crate::NodeKind) -> u32 {
+- src/sink.rs: pub fn token_count(&self, kind: crate::TokenKind) -> u32 {
 - src/sink.rs: pub struct SkeletonNode {
 - src/sink.rs: pub kind: crate::NodeKind,
 - src/sink.rs: pub span: Range<u32>,
@@ -1212,6 +1232,12 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/sink.rs: pub first: A,
 - src/sink.rs: pub second: B,
 - src/sink.rs: pub fn new(first: A, second: B) -> Self {
+- src/sink.rs: pub enum FilterStep<'a> {
+- src/sink.rs: pub struct FilterSink<P, S> {
+- src/sink.rs: pub fn new(predicate: P, inner: S) -> Self {
+- src/sink.rs: pub fn inner(&self) -> &S {
+- src/sink.rs: pub fn inner_mut(&mut self) -> &mut S {
+- src/sink.rs: pub fn into_inner(self) -> S {
 - src/tree.rs: pub enum GreenChild {
 - src/tree.rs: pub fn text_len(&self) -> u32 {
 - src/tree.rs: pub fn has_error(&self) -> bool {
