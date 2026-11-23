@@ -100,7 +100,7 @@ impl Dfa {
         let mut queue: std::collections::VecDeque<u32> = std::collections::VecDeque::from([0]);
         while let Some(state) = queue.pop_front() {
             for class in 0..classes.len() {
-                let (lo, hi) = classes.interval(class);
+                let (lo, _) = classes.interval(class);
                 // Move over the whole class interval (all scalars in a
                 // class behave identically — that is the compression).
                 let moved = nfa.move_set(&subsets[state as usize], lo);
@@ -120,7 +120,6 @@ impl Dfa {
                     id
                 };
                 transitions[state as usize][class] = Some(next);
-                let _ = hi; // interval end implicit in the partition
             }
         }
         Self {
