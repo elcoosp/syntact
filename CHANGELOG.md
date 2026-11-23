@@ -6,6 +6,44 @@ the [semver policy](docs/semver-policy.md).
 
 ## [Unreleased]
 
+### Shared pack registry (issue 046)
+
+- **pack-registry**: one canonical registration of the ten packs with
+  three lookup axes (name, language id, extension/URI) and the uniform
+  fn-pointer entry points; the CLI, both language servers, and the
+  playground server consume the seam (the playground previously
+  reached only seven packs).
+
+### Streaming sinks — query matcher + region validator
+
+- **runtime-core**: [`TeeSink`] — the two-way sink combinator that
+  runs two consumers (tree builder + query matcher) over one
+  `drive_sink` pass; consumer-table row for the streaming query
+  matcher now points at a real implementation.
+- **query**: [`QuerySink`] — the push-based query matcher implementing
+  `runtime_core::sink::Sink`; matching, capture binding, dedup, and
+  predicate dispatch share the pull cursor's evaluation path, pinned
+  by a differential suite (valid, malformed, hand-packed, and 300
+  seeded randomized streams) and a criterion head-to-head.
+- **structural-index**: the region sink seam — [`RegionSink`] +
+  `scan_regions` (ControlFlow early exit) with the index collector as
+  a consumer, and [`FaultScanner`], the streaming fail-fast validator
+  now behind `validate_fast`: the "without building the index"
+  contract is real (dhat-gated at zero allocations) instead of
+  documented-only.
+
+### Documentation and debt
+
+- Drift fixes: `drive_sink`'s error/tag docs, the persistent module's
+  parallelism claims (the chunked merge is single-threaded today — the
+  parallelism is caller-side), `TreeBuilder::finish`'s open-stack
+  behavior, the incremental engine's `ContextHash` mention, the
+  cookbook recipe list, the CLI usage string (missing `packs`), and
+  the stale issue-044 pointer in the workspace lint rationale.
+- Debt: the duplicated `#[cfg(test)]` banner in `lr-shadow`'s lower
+  module removed; the vacuous u32-guard test in `runtime-core`'s input
+  layer rewritten to assert what it actually verifies.
+
 ### Compiler loop — descent-lower (issue 043)
 
 - **descent-lower**: the grammar → descriptor compiler — the keystone
