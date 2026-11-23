@@ -22,12 +22,18 @@
 //!    reused (token-granularity [`engine::Stats`]).
 //! 5. [`diff::changed_ranges`] reports the byte ranges that differ; the
 //!    tests pin it against a brute-force diff.
+//! 6. [`tree_diff::changed_tree_ranges`] recomputes the damage at green-
+//!    tree granularity — the roadmap §7.7 changed-ranges walk (pairwise
+//!    old/new subtree classification) that downstream invalidation
+//!    consumes; [`DiffVisitor`] is its observability seam.
 
 pub mod diff;
 pub mod edit;
 pub mod engine;
+pub mod tree_diff;
 
 pub use edit::Edit;
 pub use engine::{
     ContextHash, Engine, Lexer, Outcome, Rejection, ReuseCursor, Stats, reused_subtree_bytes,
 };
+pub use tree_diff::{DiffVisitor, RangeCollector, SubtreeVerdict, changed_tree_ranges, diff_trees};
