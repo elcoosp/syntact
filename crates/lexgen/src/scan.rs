@@ -75,6 +75,30 @@ fn literal_regex(text: &str) -> Regex {
 }
 
 impl Scanner {
+    /// Reconstruct a scanner from its compiled DFA and trivia
+    /// classification (issue 045 — the codegen descent backend emits the
+    /// DFA as Rust literals and rebuilds the scanner once via `OnceLock`,
+    /// reusing this crate's `scan` algorithm exactly: no second lexer
+    /// engine, just the same tables the compiler produced).
+    #[must_use]
+    pub fn from_parts(dfa: Dfa, trivia: Vec<bool>) -> Self {
+        Self { dfa, trivia }
+    }
+
+    /// Whether token `kind` is classified as trivia (for the codegen
+    /// descent backend's emitted scanner tables — issue 045).
+    #[must_use]
+    pub fn is_trivia(&self, kind: u16) -> bool {
+        usize::from(kind) < self.trivia.len() && self.trivia[usize::from(kind)]
+    }
+
+    /// Borrow the compiled DFA (for the codegen descent backend to serialize
+    /// into emitted static tables — issue 045).
+    #[must_use]
+    pub fn dfa(&self) -> &Dfa {
+        &self.dfa
+    }
+
     /// Scan the whole source into lexemes (token events + trivia flags,
     /// unmatched chars as [`Lexeme::Error`]).
     ///
