@@ -28,15 +28,26 @@
 //!   they close ([`sink::scan_regions`], `ControlFlow` early exit);
 //!   [`sink::FaultScanner`] is the built-in streaming, fail-fast
 //!   validator behind [`plan::validate_fast`].
+//! - **Chunk validation seam**: [`chunks::ChunkValidator`] validates
+//!   one planned chunk in isolation; [`chunks::validate_chunks`] /
+//!   [`chunks::validate_plan`] merge the per-chunk verdicts into an
+//!   attributed [`chunks::ChunkReport`] (parity with
+//!   [`plan::validate_fast`] pinned by tests) — the shape the
+//!   region-parallel roadmap (P4) runs on.
 //! - **Chunk planning**: [`plan::plan_chunks`] cuts the source into
 //!   contiguous, balanced, deterministic chunks whose boundaries sit at
 //!   depth-0 code positions — each chunk is independently parseable.
 
+pub mod chunks;
 pub mod index;
 pub mod plan;
 pub mod scan;
 pub mod sink;
 
+pub use chunks::{
+    ChunkFault, ChunkFaultScanner, ChunkReport, ChunkValidator, validate_chunks,
+    validate_chunks_with, validate_plan,
+};
 pub use index::{RegionIndex, RegionKind};
 pub use plan::{ChunkPlan, StructuralFault, plan_chunks, validate_fast};
 pub use scan::{scan, scan_reference};
