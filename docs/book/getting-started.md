@@ -15,8 +15,8 @@ three layers:
   automaton), `descent` (Pratt backend), `recovery`, `codegen-rust`,
   `incremental`, `query`, `structural-index`, plus the `syntact` CLI.
 - **packs/** — one crate per language (JSON, TOML, Python, TypeScript,
-  Rust, C, SQL), each shipping a lossless reference parser on the event
-  protocol.
+  Rust, C, SQL, INI, CSV, Markdown), each shipping a lossless reference
+  parser on the event protocol.
 
 ## Parse your first document
 
@@ -97,7 +97,14 @@ call the same `run` function):
   backend classification and every LL(1) conflict site.
 - `syntact conformance FILES…` — gate `render(parse(x)) == x` over
   documents.
-- `syntact trace PACK FILE` — per-region recovery events.
+- `syntact packs` — list the registered packs: name, language id,
+  extensions.
+- `syntact trace PACK FILE` — per-region recovery events (repair ops
+  for the JSON pack's planner; the other packs report their reference
+  parser's native recovery regions).
+- `syntact lsp` — the `.gir` grammar language server over stdio.
+- `syntact pack-lsp` — the pack language server for all ten pack
+  languages over stdio.
 
 Next: [the event protocol](event-protocol.md) — the contract every
 parser and consumer shares.
