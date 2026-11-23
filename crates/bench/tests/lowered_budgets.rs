@@ -1,18 +1,18 @@
-//! Generated-path allocation budget gates (issue 043): dhat-counted
-//! tests over the descriptor-compiler pipeline, machine-independent
-//! (counters, never wall-clock), so they run in CI.
+//! Generated-path allocation budget gates (issue 043, tightened in 045 M2):
+//! dhat-counted tests over the descriptor-compiler pipeline,
+//! machine-independent (counters, never wall-clock), so they run in CI.
 //!
 //! Gates (the ~32 KiB steady JSON fixture):
 //! - `lower` (grammar → descriptors): a one-time compile step, pinned
 //!   absolutely — <= 600 blocks regardless of document size (the
 //!   grammar, not the document, drives it).
-//! - generated `green_tree` parse: <= 5× the reference pack's blocks
-//!   per KiB on the same fixture (measured 4.5×) — the interpreter
-//!   allocates the same event/tree shapes plus the engine's per-entry
-//!   `RuleDesc` body/sync clones (`descent::Engine::rule` clones the
-//!   pattern to satisfy the interpreter's borrows). That clone tax is
-//!   the known follow-up (share-once descriptors); the factor gate
-//!   catches runaway regressions meanwhile.
+//! - generated `green_tree` parse: <= 2× the reference pack's blocks
+//!   per KiB on the same fixture — the engine's per-entry `RuleDesc`
+//!   body/sync clones were eliminated (issue 045 M2:
+//!   `descent::Engine::rule` now borrows `body`/`sync` from the `&'d
+//!   Desc` instead of cloning), so the measured factor dropped from
+//!   4.5× to ~1.0× (parity with the reference). The 2× gate is the
+//!   realistic headroom above the reference's allocation shape.
 //! - generated `feed`: the scan is a flat per-lexeme Vec — caught by
 //!   the same factor gate through `green_tree` (it dominates).
 
@@ -82,9 +82,12 @@ fn lower_compile_budget() {
 }
 
 /// The generated parse path stays within a constant factor of the
-/// hand-written reference on the same fixture (measured headroom above
-/// the engine's per-entry descriptor clones).
-const GENERATED_VS_REFERENCE_FACTOR: u64 = 5;
+/// hand-written reference on the same fixture. The engine's per-entry
+/// descriptor clones were eliminated (issue 045 M2: `descent::Engine::rule`
+/// now borrows `body`/`sync` from the `&'d Desc` instead of cloning), so
+/// the factor gate tightens from 5× (the clone-tax headroom) to 2× (the
+/// realistic headroom above the reference's allocation shape).
+const GENERATED_VS_REFERENCE_FACTOR: u64 = 2;
 
 #[test]
 fn generated_parse_budget_per_kib() {
