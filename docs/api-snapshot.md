@@ -1019,10 +1019,24 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/cursor.rs: pub query: &'q CompiledQuery,
 - src/cursor.rs: pub fn new(query: &'q CompiledQuery) -> Self {
 - src/cursor.rs: pub fn matches(
+- src/cursor.rs: pub(crate) struct NodeSummary {
+- src/cursor.rs: pub kind: u16,
+- src/cursor.rs: pub child_kinds: Vec<u16>,
+- src/cursor.rs: pub child_spans: Vec<Range<u32>>,
+- src/cursor.rs: pub(crate) fn evaluate_node(
+- src/cursor.rs: pub(crate) struct NodeFrame {
+- src/cursor.rs: pub(crate) kind: u16,
+- src/cursor.rs: pub(crate) first_token: usize,
+- src/cursor.rs: pub(crate) last_token: Option<usize>,
+- src/cursor.rs: pub(crate) child_kinds: Vec<u16>,
+- src/cursor.rs: pub(crate) child_spans: Vec<Range<u32>>,
+- src/cursor.rs: pub(crate) fn span(&self, ranges: &[(u16, Range<u32>)], source_len: usize) -> Range<usize> {
 - src/lib.rs: pub mod cursor;
 - src/lib.rs: pub mod query;
+- src/lib.rs: pub mod sink;
 - src/lib.rs: pub use cursor::{Capture, Match, PredicateArg, PredicateFn, QueryCursor};
 - src/lib.rs: pub use query::{
+- src/lib.rs: pub use sink::QuerySink;
 - src/query.rs: pub enum Quant {
 - src/query.rs: pub struct Child {
 - src/query.rs: pub kind: u16,
@@ -1056,6 +1070,10 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/query.rs: pub span: Range<usize>,
 - src/query.rs: pub fn parse(text: &str, resolver: &dyn KindResolver) -> Result<CompiledQuery, QueryError> {
 - src/query.rs: pub fn compile(text: &str, resolver: &dyn KindResolver) -> Result<CompiledQuery, QueryError> {
+- src/sink.rs: pub struct QuerySink<'q, 's, 'r, 'p> {
+- src/sink.rs: pub fn new(
+- src/sink.rs: pub fn matches(&self) -> &[Match] {
+- src/sink.rs: pub fn into_matches(self) -> Vec<Match> {
 
 ## crates/recovery
 
@@ -1185,6 +1203,10 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/sink.rs: pub nodes: Vec<SkeletonNode>,
 - src/sink.rs: pub struct TokenSink {
 - src/sink.rs: pub tokens: Vec<(crate::TokenKind, Range<u32>)>,
+- src/sink.rs: pub struct TeeSink<A, B> {
+- src/sink.rs: pub first: A,
+- src/sink.rs: pub second: B,
+- src/sink.rs: pub fn new(first: A, second: B) -> Self {
 - src/tree.rs: pub enum GreenChild {
 - src/tree.rs: pub fn text_len(&self) -> u32 {
 - src/tree.rs: pub fn has_error(&self) -> bool {
@@ -1236,9 +1258,11 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub mod index;
 - src/lib.rs: pub mod plan;
 - src/lib.rs: pub mod scan;
+- src/lib.rs: pub mod sink;
 - src/lib.rs: pub use index::{RegionIndex, RegionKind};
 - src/lib.rs: pub use plan::{ChunkPlan, StructuralFault, plan_chunks, validate_fast};
 - src/lib.rs: pub use scan::{scan, scan_reference};
+- src/lib.rs: pub use sink::{FaultScanner, RegionSink, scan_regions};
 - src/plan.rs: pub enum StructuralFault {
 - src/plan.rs: pub fn validate_fast(source: &str) -> Result<(), StructuralFault> {
 - src/plan.rs: pub struct ChunkPlan {
@@ -1249,6 +1273,18 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/scan.rs: pub const BLOCK: usize = 64;
 - src/scan.rs: pub fn scan(source: &str) -> RegionIndex {
 - src/scan.rs: pub fn scan_reference(source: &str) -> RegionIndex {
+- src/scan.rs: pub(crate) enum State {
+- src/scan.rs: pub(crate) fn kind(self) -> RegionKind {
+- src/scan.rs: pub(crate) fn find_special(window: &[u8]) -> Option<usize> {
+- src/scan.rs: pub(crate) struct Scanner<'s> {
+- src/scan.rs: pub(crate) fn new(source: &'s str, sink: &'s mut dyn RegionSink) -> Self {
+- src/scan.rs: pub(crate) fn run(mut self) -> ControlFlow<()> {
+- src/sink.rs: pub trait RegionSink {
+- src/sink.rs: pub fn scan_regions(source: &str, sink: &mut dyn RegionSink) -> ControlFlow<()> {
+- src/sink.rs: pub struct FaultScanner<'s> {
+- src/sink.rs: pub fn new(source: &'s str) -> Self {
+- src/sink.rs: pub fn regions_seen(&self) -> usize {
+- src/sink.rs: pub fn finish(self) -> Result<(), StructuralFault> {
 
 ## crates/syntact
 
