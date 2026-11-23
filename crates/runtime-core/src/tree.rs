@@ -204,14 +204,15 @@ impl<'s> TreeBuilder<'s> {
         }
     }
 
-    /// Finish: close all open nodes (a stream that left nodes open is an
-    /// error at [`drive_sink`](crate::sink::drive_sink) level, so this
-    /// only fires for a truly empty builder), synthesize the EOF token,
-    /// and require exactly one root.
+    /// Finish: synthesize the EOF token (zero-width at the source end;
+    /// excluded from render by its empty range but visible in token
+    /// tables) and require exactly one root.
     ///
     /// # Errors
-    /// When there is no root or more than one root (sibling roots are a
-    /// parser bug — packs wrap documents in an implicit ROOT).
+    /// When the builder is not exactly-one-rooted: no root at all,
+    /// multiple sibling roots (a parser bug — packs wrap documents in
+    /// an implicit ROOT), or nodes still open (an unterminated enter
+    /// stack is reported here, not at the drive level).
     ///
     /// # Panics
     /// Never in practice: the root `Arc` is freshly built and uniquely
