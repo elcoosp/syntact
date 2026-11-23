@@ -1,7 +1,7 @@
 //! The TCP layer of the playground server (issue 038): request-line
 //! parsing with bounded sizes, response serialization, and the accept
 //! loop with graceful shutdown. All policy decisions live in the pure
-//! [`route`](crate::route) function; this module only moves bytes.
+//! [`route`] function; this module only moves bytes.
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
