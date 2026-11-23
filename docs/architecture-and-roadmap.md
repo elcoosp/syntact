@@ -892,6 +892,8 @@ gantt
 | Phase | Exit gate |
 |---|---|
 | **P0 Foundation** (2026-11 → 2027-04) | JSON pack parses the official JSON test suite; byte-faithful on corpus; fuzz-clean (losslessness + safety); green/red tree ≤1.0× tree-sitter bytes/node; event stream consumed by ≥2 sinks; `syntact build` produces a compiling crate in <10 s at O1 |
+
+> **Evidence (issue 045, 2026-11):** `syntact build json.gir -o <dir>` emits a standalone compiling safe-Rust parser crate (`codegen-rust::descent::emit_crate`); the integration gate emits into `target/codegen/json/` and `cargo test`s it — three-way parity with the engine + reference holds on the valid + malformed corpus, determinism is byte-identical, generated `parse_events` is at parity with the (M2-de-cloned) engine at ~1.003× the reference's allocations.
 | **P1 Throughput** (2027-05 → 2027-10) | validate ≥3× and scan ≥2× tree-sitter full parse on JSON+TOML corpora; full-CST parity ±20%; allocation snapshots green; PGO wired and measured (report published); TOML pack passes official suite |
 | **P2 Recovery + packs** (2027-11 → 2028-04) | TypeScript pack: parses ≥99% AST-structure match vs OXC on babel+TS corpora; recovery ≥95% repair rate on mutated corpora with deterministic re-runs; Python pack parses stdlib subset incl. f-strings; `syntact trace` shipped |
 | **P3 Incremental + queries** (2028-05 → 2028-12) | incremental equivalence: 10k fuzz edits × 5 packs, zero divergence; single-token edit ≤50 µs median on 1k-line files; changed ranges correct vs brute-force diff; queries: build-time validation + ≥parity with tree-sitter on highlight/symbol suites; partial parse works in an editor demo |
