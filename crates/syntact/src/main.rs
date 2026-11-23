@@ -6,7 +6,7 @@ fn main() {
         Ok(code) => std::process::exit(code),
         Err(message) => {
             eprintln!(
-                "syntact: {message}\n\nusage: syntact <check|build|conflicts|conformance|trace|lsp|pack-lsp> …"
+                "syntact: {message}\n\nusage: syntact <check|build|conflicts|conformance|packs|trace|lsp|pack-lsp> …"
             );
             std::process::exit(cli::USAGE);
         }
