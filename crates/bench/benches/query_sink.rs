@@ -1,7 +1,7 @@
 //! Criterion suite for the query sink seam (§7.2 consumer table): the
 //! push-based [`QuerySink`] driven through `drive_sink` (including the
 //! `TeeSink` zipped pass) against the pull-based [`QueryCursor`] over
-//! the same packed JSON stream. Run-fast config — trends only.
+//! the same packed JSON stream. Criterion defaults — trends only.
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use packs_json::reference;
