@@ -93,7 +93,7 @@ pub const JSON_GRAMMAR: &str = include_str!("../fixtures/json.kdl");
 /// offending rule — the compiler refuses, it never mis-lowers.
 ///
 /// The set of refusals is expected to grow with the lowering (1.x
-/// additions), so the enum is [`non_exhaustive`] from birth.
+/// additions), so the enum is `#[non_exhaustive]` from birth.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum LowerError {
