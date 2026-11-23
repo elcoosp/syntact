@@ -237,10 +237,7 @@ impl Engine<'_, '_> {
                 }
             }
             Pat::Rule(id) => self.rule(*id),
-            Pat::Expr(id) => {
-                let table = self.desc.expr(*id).clone();
-                self.pratt_climb(&table, 0)
-            }
+            Pat::Expr(id) => self.pratt_climb(self.desc.expr(*id), 0),
             Pat::Peek { tok, pat } => {
                 if self.feed.get(self.pos).is_some_and(|(k, _)| k == tok) {
                     self.pat(pat, sync)
@@ -271,12 +268,10 @@ impl Engine<'_, '_> {
     /// the committed token prefix is kept (losslessness).
     fn rule(&mut self, id: u16) -> bool {
         let rule = self.desc.rule(id);
-        let (kind, body, sync, hook) = (
-            rule.node_kind,
-            rule.body.clone(),
-            rule.sync.clone(),
-            rule.mode_hook,
-        );
+        let kind = rule.node_kind;
+        let hook = rule.mode_hook;
+        let sync = &rule.sync;
+        let body = &rule.body;
         if let Some(mode) = hook {
             self.run.modes.push(ModeCrossing {
                 mode,
@@ -291,13 +286,13 @@ impl Engine<'_, '_> {
         let start_pos = self.pos;
         let start_events = self.run.events.len();
         let mut budget: u32 = 8;
-        if !self.pat(&body, &sync) {
+        if !self.pat(body, sync) {
             // Recover only when the rule got somewhere: consumed a token
             // or emitted content beyond its own Start. A zero-progress
             // failure (e.g. the trailing Rep iteration at EOF) closes the
             // empty node silently — nothing to recover from.
             if self.pos != start_pos || self.run.events.len() > start_events + 1 {
-                self.recover(&sync, &mut budget);
+                self.recover(sync, &mut budget);
             }
         }
         self.run.events.push(Event::Finish);
