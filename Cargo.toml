@@ -73,7 +73,8 @@ struct_excessive_bools = "allow"
 too_many_lines = "allow"
 # Pack parse entry signatures thread (Arc<GreenNode>, &Source, &mut Sink)
 # plus the closed-over reference parser state — the rowan-style shared-tree
-# return type is the natural shape, not a readability defect (issue 044).
+# return type is the natural shape, not a readability defect (see
+# crates/pack-registry, where the PackEntry shape is defined).
 type_complexity = "allow"
 # The descent engine threads the sync set through recursion — the sync
 # parameter drives recovery depth, which the lint cannot see.
@@ -101,6 +102,7 @@ descent-lower = { path = "crates/descent-lower" }
 generated-json = { path = "crates/generated-json" }
 incremental = { path = "crates/incremental" }
 query = { path = "crates/query" }
+structural-index = { path = "crates/structural-index" }
 lsp = { path = "crates/lsp" }
 pack-registry = { path = "crates/pack-registry" }
 packs-toml = { path = "packs/toml" }
