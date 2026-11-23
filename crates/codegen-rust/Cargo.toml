@@ -1,6 +1,6 @@
 [package]
 name = "codegen-rust"
-description = "codegen-rust:Deterministic O(1) Rust table emission (§4.3)"
+description = "codegen-rust:Deterministic Rust emission — tables (issue 015) + descent crate (issue 045)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,8 +9,16 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
-gir-ir.workspace = true
+descent.workspace = true
+descent-lower.workspace = true
 gir-analysis.workspace = true
+gir-ir.workspace = true
+lexgen.workspace = true
+
+[dev-dependencies]
+gir-syntax.workspace = true
+lexgen.workspace = true
+runtime-core.workspace = true
 
 [lints]
 workspace = true
