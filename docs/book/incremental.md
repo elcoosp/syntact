@@ -10,6 +10,11 @@ of the old token stream survive? The engine:
    window (a few tokens around the edit) and splice.
 4. **Fallback**: otherwise lex the new source fresh. Both paths then
    compute the changed ranges for downstream consumers.
+5. **Tree granularity**: beyond the token stream, `changed_tree_ranges`
+   walks the old and new green trees in parallel and classifies every
+   subtree as matching, descending, or differing — the §7.7
+   changed-ranges walk for downstream invalidation, with sibling
+   precision the token-level diff cannot express.
 
 A pack plugs in through the `Lexer` trait — the ranges side table of a
 whole-document parse already *is* a token stream (`ParseLexer`). The
