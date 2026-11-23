@@ -3,8 +3,11 @@
 //! Subcommands over the real pipeline (everything that exists today, no
 //! stubs):
 //!
-//! - `check <GRAMMAR.gir | DOCUMENT.json>` — grammar validation (KDL →
-//!   IR) or a document parse check through the JSON pack.
+//! - `check <GRAMMAR.gir | DOCUMENT> [--pack <PACK>]` — grammar
+//!   validation (KDL → IR) or a document parse check routed through the
+//!   shared pack registry: the file extension picks the pack when
+//!   `--pack` is absent (stdin defaults to JSON), and unknown
+//!   extensions refuse with the registered pack list (issue 046).
 //! - `build <GRAMMAR.gir> [-o <DIR>]` — compile the front half of the
 //!   pipeline (KDL → IR, lexer compilation, LR(1) shadow automaton) and
 //!   print the per-stage stats; with `-o <DIR>`, emit a standalone,
@@ -12,11 +15,15 @@
 //!   issue 045 / roadmap §6.1 pass 12 / §12.3 P0 "compiling crate" row).
 //! - `conflicts <GRAMMAR.gir>` — the determinism report: per-rule
 //!   backend classification plus every LL(1) conflict site.
-//! - `conformance <FILES…>` — run the JSON pack over documents and gate
-//!   byte-faithfulness (`render(parse(x)) == x`).
+//! - `conformance <FILES…> [--pack <PACK>]` — run documents through a
+//!   registered pack (default `json`) and gate byte-faithfulness
+//!   (`render(parse(x)) == x`).
+//! - `packs` — list the registered packs: name, language id, extensions
+//!   (the pack-registry seam, issue 046).
 //! - `trace <PACK> <FILE>` — per-region recovery events (offset, kind,
-//!   repair ops, resync point) from the pack's reference parser plus,
-//!   for JSON, the shadow-automaton CPCT+ repair loop (issue 029).
+//!   repair ops, resync point) for every registered pack: JSON keeps
+//!   the shadow-automaton CPCT+ repair loop, the other nine packs report
+//!   their reference-parser recovery regions (issue 029, issue 046).
 //! - `lsp` — the `.gir` grammar language server over stdio
 //!   (JSON-RPC 2.0, LSP 3.17 subset; issue 041).
 //! - `pack-lsp` — the pack language server over stdio: diagnostics,
@@ -30,6 +37,7 @@ use std::io::Read as _;
 
 use clap::{Parser as ClapParser, Subcommand};
 use gir_ir::Grammar;
+use pack_registry::PackRegistry;
 use runtime_core::input::Source;
 
 pub mod trace;
@@ -45,11 +53,17 @@ pub struct Cli {
 /// The subcommands.
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Validate a grammar (.gir KDL) or a JSON document.
+    /// Validate a grammar (.gir KDL) or a document through the pack its
+    /// extension selects (`--pack` overrides; `-` defaults to JSON).
     Check {
         /// The file to check (`-` reads stdin).
         #[arg(value_name = "FILE")]
         file: String,
+        /// The pack to check through (default: the file extension's
+        /// registered pack; stdin and extensionless input default to
+        /// `json`).
+        #[arg(short = 'p', long = "pack", value_name = "PACK")]
+        pack: Option<String>,
     },
     /// Compile a grammar through the pipeline front half (loader, lexer,
     /// shadow automaton) and report the stats — or, with `-o <DIR>`, emit
@@ -71,15 +85,22 @@ pub enum Command {
         #[arg(value_name = "GRAMMAR")]
         grammar: String,
     },
-    /// Run JSON documents through the pack and gate byte-faithfulness.
+    /// Run documents through a registered pack and gate
+    /// byte-faithfulness.
     Conformance {
         /// Documents to check (`-` reads stdin once).
         #[arg(value_name = "FILE", num_args = 1..)]
         files: Vec<String>,
+        /// The pack to run (default `json`).
+        #[arg(short = 'p', long = "pack", value_name = "PACK")]
+        pack: Option<String>,
     },
+    /// List the registered packs: name, language id, extensions.
+    Packs,
     /// Print per-region recovery events for a document through a pack.
     Trace {
-        /// The pack to trace through (`json`, `toml`).
+        /// The pack to trace through (any registered pack name; see
+        /// `syntact packs`).
         #[arg(value_name = "PACK")]
         pack: String,
         /// The document to trace (`-` reads stdin).
@@ -127,14 +148,20 @@ where
     )
     .map_err(|error| error.to_string())?;
     Ok(match cli.command {
-        Command::Check { file } => cmd_check(&file),
+        Command::Check { file, pack } => cmd_check(&file, pack.as_deref()),
         Command::Build { grammar, out } => cmd_build(&grammar, out.as_deref()),
         Command::Conflicts { grammar } => cmd_conflicts(&grammar),
-        Command::Conformance { files } => cmd_conformance(&files),
+        Command::Conformance { files, pack } => cmd_conformance(&files, pack.as_deref()),
+        Command::Packs => cmd_packs(),
         Command::Trace { pack, file, json } => cmd_trace(&pack, &file, json),
         Command::Lsp { max_message } => cmd_lsp(max_message),
         Command::PackLsp { max_message } => cmd_pack_lsp(max_message),
     })
+}
+
+/// The shared reference registry for command dispatch.
+fn registry() -> PackRegistry {
+    PackRegistry::reference()
 }
 
 /// Serve the grammar language server over stdin/stdout.
@@ -166,7 +193,7 @@ fn read_input(path: &str) -> Result<String, String> {
     }
 }
 
-fn cmd_check(file: &str) -> i32 {
+fn cmd_check(file: &str, pack: Option<&str>) -> i32 {
     let Ok(text) = read_input(file) else {
         return USAGE;
     };
@@ -191,9 +218,18 @@ fn cmd_check(file: &str) -> i32 {
             }
         };
     }
-    // JSON document check: the pack recovers, so the verdict is the
-    // syntax-error count from parse_events, not the Result.
-    let (_events, _ranges, errors) = packs_json::reference::parse_events(&text);
+    // Document check through the registry (issue 046): `--pack` wins,
+    // else the file extension's registered pack; `-` (stdin) has no
+    // extension, so it keeps the historical JSON default. Unknown
+    // extensions refuse with the registered list instead of guessing a
+    // parser.
+    let registry = registry();
+    let Some(entry) = resolve_pack(&registry, pack, file) else {
+        return USAGE;
+    };
+    // The pack recovers, so the verdict is the syntax-error count from
+    // parse_events, not the Result.
+    let (_events, _ranges, errors) = (entry.parse_events)(&text);
     if errors == 0 {
         println!("document ok: {} bytes", text.len());
         OK
@@ -201,6 +237,48 @@ fn cmd_check(file: &str) -> i32 {
         eprintln!("document invalid: {errors} syntax error(s)");
         FAIL
     }
+}
+
+/// Resolve the pack for a document command: explicit `--pack` first,
+/// then the file extension, then the `json` default for stdin. Prints
+/// the named refusal and returns `None` when nothing resolves.
+fn resolve_pack<'r>(
+    registry: &'r PackRegistry,
+    pack: Option<&str>,
+    file: &str,
+) -> Option<&'r pack_registry::PackEntry> {
+    if let Some(name) = pack {
+        let Some(entry) = registry.get(name) else {
+            eprintln!(
+                "unknown pack `{name}` (registered: {})",
+                registry.names().join(", ")
+            );
+            return None;
+        };
+        return Some(entry);
+    }
+    if file == "-" {
+        // Stdin carries no extension; keep the historical JSON default.
+        return registry.get("json");
+    }
+    let extension = std::path::Path::new(file)
+        .extension()
+        .and_then(|extension| extension.to_str());
+    let Some(extension) = extension else {
+        eprintln!(
+            "no extension on `{file}`; pass --pack (registered: {})",
+            registry.names().join(", ")
+        );
+        return None;
+    };
+    let Some(entry) = registry.for_extension(extension) else {
+        eprintln!(
+            "unknown document extension `.{extension}` (registered: {})",
+            registry.names().join(", ")
+        );
+        return None;
+    };
+    Some(entry)
 }
 
 fn cmd_build(grammar_path: &str, out: Option<&str>) -> i32 {
@@ -308,11 +386,23 @@ fn cmd_conflicts(grammar_path: &str) -> i32 {
     }
 }
 
-fn cmd_conformance(files: &[String]) -> i32 {
+fn cmd_conformance(files: &[String], pack: Option<&str>) -> i32 {
     if files.is_empty() {
         eprintln!("conformance: no documents given");
         return USAGE;
     }
+    // The pack comes from the registry (issue 046): default `json`,
+    // `--pack <NAME>` picks any registered pack; unknown names refuse
+    // with the registered list.
+    let registry = registry();
+    let name = pack.unwrap_or("json");
+    let Some(entry) = registry.get(name) else {
+        eprintln!(
+            "unknown pack `{name}` (registered: {})",
+            registry.names().join(", ")
+        );
+        return USAGE;
+    };
     let mut failures = 0;
     for file in files {
         let Ok(text) = read_input(file) else {
@@ -320,8 +410,8 @@ fn cmd_conformance(files: &[String]) -> i32 {
             failures += 1;
             continue;
         };
-        let (_, _ranges, errors) = packs_json::reference::parse_events(&text);
-        let faithful = packs_json::reference::parse(&text).is_ok_and(|tree| {
+        let (_, _ranges, errors) = (entry.parse_events)(&text);
+        let faithful = (entry.parse)(&text).is_ok_and(|tree| {
             let input = Source::from_str_unchecked(&text);
             tree.render(&input) == text
         });
@@ -334,6 +424,26 @@ fn cmd_conformance(files: &[String]) -> i32 {
         }
     }
     if failures == 0 { OK } else { FAIL }
+}
+
+/// List the registered packs: one line per pack in registration order
+/// (deterministic), sourced from the pack-registry seam (issue 046).
+fn cmd_packs() -> i32 {
+    let registry = registry();
+    println!("registered packs ({}):", registry.len());
+    for entry in registry.entries() {
+        let extensions = entry
+            .extensions
+            .iter()
+            .map(|extension| format!(".{extension}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!(
+            "  {:<10} language `{:<10}` extensions: {}",
+            entry.name, entry.language_id, extensions
+        );
+    }
+    OK
 }
 
 fn cmd_trace(pack: &str, file: &str, json: bool) -> i32 {
