@@ -9,8 +9,8 @@
 //! | token sink | [`TokenSink`] — highlighting-class tools |
 //! | skeleton builder | [`SkeletonSink`] — kinds + spans, no trivia |
 //! | full CST builder | [`crate::tree::TreeBuilder`] — green/red trees (§7.6) |
-//! | streaming query matcher | query module (§7.8, Phase 3) driven through this trait |
-//! | incremental engine | splices `ReusedSubtree` records, then this trait (§7.7) |
+//! | streaming query matcher | the query crate's `QuerySink` — patterns run as the stream drives, zipped with tree-side sinks via [`TeeSink`] |
+//! | incremental engine | splices `ReusedSubtree` records, then this trait (§7.7, Phase 3) |
 
 use std::ops::Range;
 
@@ -18,9 +18,10 @@ use crate::events::Output;
 
 /// A consumer of flattened parse output.
 ///
-/// Implemented by: validation counting, token collection, skeleton builder,
-/// green/red tree builder, streaming query matcher, incremental splicer
-/// (roadmap §7.2 table).
+/// Implemented by: validation counting, token collection, skeleton
+/// builder, green/red tree builder, the query crate's streaming
+/// `QuerySink` matcher, and the [`TeeSink`] combinator that runs two
+/// consumers over one pass (roadmap §7.2 table).
 pub trait Sink {
     /// Enter a node of `kind`.
     fn enter(&mut self, kind: crate::NodeKind);
@@ -37,12 +38,16 @@ pub trait Sink {
 /// sink calls with source ranges supplied by `ranges` (parallel to token
 /// steps in DFS order — the parser's token source produces this vector).
 ///
-/// `Step::Error` words (tag `0xF`) forward their diag index to
-/// [`Sink::error`].
+/// Error words (tag [`crate::events::TAG_ERROR`] and the zero word —
+/// the same decode [`crate::events::Output::unpack_word`] applies)
+/// forward their diag index to [`Sink::error`].
 ///
 /// # Errors
-/// Errors when the stream is malformed relative to `ranges` (more token
-/// steps than ranges).
+/// Currently never: missing range-table entries are synthesized as
+/// zero-width ranges at the running cursor, and malformed enter/exit
+/// sequences are left to the sinks' own balance checks (see
+/// [`ValidationSink::balanced`]). The `Result` reserves the failure
+/// channel for a stricter driver contract.
 pub fn drive_sink(
     output: &Output,
     ranges: &[Range<u32>],
@@ -240,11 +245,57 @@ impl Sink for TokenSink {
     fn error(&mut self, _diag: u32) {}
 }
 
+/// A two-way sink combinator: every [`Sink`] call forwards to both
+/// halves — the §7.2 many-consumers-over-one-stream contract made
+/// concrete (e.g. build a tree and run the query crate's `QuerySink`
+/// matcher in a single [`drive_sink`] pass).
+///
+/// The halves run in field order (`first`, then `second`) and degrade
+/// independently on malformed streams: a half that ignores exit
+/// underflow does so exactly as it would in a solo run.
+#[derive(Debug)]
+pub struct TeeSink<A, B> {
+    /// The first half (called before `second` on every step).
+    pub first: A,
+    /// The second half.
+    pub second: B,
+}
+
+impl<A, B> TeeSink<A, B> {
+    /// Zip two sinks into one.
+    #[must_use]
+    pub fn new(first: A, second: B) -> Self {
+        Self { first, second }
+    }
+}
+
+impl<A: Sink, B: Sink> Sink for TeeSink<A, B> {
+    fn enter(&mut self, kind: crate::NodeKind) {
+        self.first.enter(kind);
+        self.second.enter(kind);
+    }
+
+    fn exit(&mut self) {
+        self.first.exit();
+        self.second.exit();
+    }
+
+    fn token(&mut self, kind: crate::TokenKind, range: Range<u32>, n_raw: u8) {
+        self.first.token(kind, range.clone(), n_raw);
+        self.second.token(kind, range, n_raw);
+    }
+
+    fn error(&mut self, diag: u32) {
+        self.first.error(diag);
+        self.second.error(diag);
+    }
+}
+
 #[cfg(test)]
 mod sink_tests {
     use std::ops::Range;
 
-    use super::{SkeletonSink, TokenSink, ValidationSink};
+    use super::{SkeletonSink, TeeSink, TokenSink, ValidationSink};
     use crate::events::{Output, Step};
     use crate::sink::drive_sink;
 
@@ -436,6 +487,44 @@ mod sink_tests {
         drive_sink(&output, &[], &mut sink).expect("malformed stream must not panic");
         assert_eq!(sink.nodes.len(), 1);
         assert_eq!(sink.nodes[0].kind, 1);
+    }
+
+    // ---- TeeSink: one drive, two consumers (§7.2 many-sinks contract) ----
+
+    #[test]
+    fn tee_sink_forwards_every_step_to_both_halves() {
+        let (output, ranges) = fixed_output();
+        let mut tee = TeeSink::new(ValidationSink::default(), TokenSink::default());
+        drive_sink(&output, &ranges, &mut tee).expect("drives");
+        // Both halves saw the full stream, identical to their solo runs.
+        assert_eq!(tee.first.nodes, 2);
+        assert_eq!(tee.first.tokens, 2);
+        assert!(tee.first.balanced());
+        assert_eq!(tee.second.tokens, vec![(1, 0..2), (2, 2..5)]);
+    }
+
+    #[test]
+    fn tee_sink_forwarding_matches_solo_runs_on_error_streams() {
+        let output = pack(&[
+            Step::Enter { kind: 1 },
+            Step::Error { diag: 3 },
+            Step::Token { kind: 1, n_raw: 1 },
+            Step::Exit,
+        ]);
+        let solo_validation = {
+            let mut sink = ValidationSink::default();
+            drive_sink(&output, &[], &mut sink).expect("drives");
+            sink.summary()
+        };
+        let solo_tokens = {
+            let mut sink = TokenSink::default();
+            drive_sink(&output, &[], &mut sink).expect("drives");
+            sink.tokens.clone()
+        };
+        let mut tee = TeeSink::new(ValidationSink::default(), TokenSink::default());
+        drive_sink(&output, &[], &mut tee).expect("drives");
+        assert_eq!(tee.first.summary(), solo_validation);
+        assert_eq!(tee.second.tokens, solo_tokens);
     }
 
     // ---- fuzz contract: no sink panics on arbitrary packed streams ----
