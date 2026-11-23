@@ -32,7 +32,7 @@ pub const SMALL_DOC_MAX_ALLOCS: usize = 16;
 pub const STEADY_DOC_MIN_BYTES: usize = 32 * 1024;
 
 /// The full budget table with its documentation, for round-trip checks
-/// and for the `syntact bench` report (issue 020).
+/// and for the criterion suites' budget gates (issue 020).
 #[must_use]
 pub fn budgets_documented() -> Vec<(&'static str, usize, &'static str)> {
     vec![
