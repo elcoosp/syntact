@@ -241,6 +241,66 @@ fn text_renders_human_readable_regions() {
     assert!(text.contains("resync: 5"), "text: {text}");
 }
 
+#[test]
+fn every_registered_pack_traces_through_the_registry() {
+    // A non-json pack: reference-diag regions, no automaton ops.
+    let python = trace("python", "x = @").expect("python trace");
+    assert_eq!(python.pack, "python");
+    assert!(!python.ok);
+    assert_ne!(python.regions, Vec::new());
+    assert!(
+        python.regions.iter().all(|region| region.ops.is_empty()),
+        "reference-only packs carry no repair ops: {:?}",
+        python.regions
+    );
+
+    // A community pack the CLI could not reach before the registry seam.
+    let ini = trace("ini", "= 1").expect("ini trace");
+    assert_eq!(ini.pack, "ini");
+    assert!(!ini.ok);
+    assert_ne!(ini.regions, Vec::new());
+
+    // Clean documents across the remaining packs: ok, no regions.
+    for (pack, source) in [
+        ("toml", "key = 1\n"),
+        ("c", "int (*f)(void);"),
+        ("sql", "SELECT * FROM users;"),
+        ("csv", "a,b\n1,2\n"),
+        ("markdown", "# Title\n"),
+    ] {
+        let output = trace(pack, source).expect("trace");
+        assert!(output.ok, "{pack} must trace clean on `{source}`");
+        assert!(output.regions.is_empty(), "{pack}: {:?}", output.regions);
+    }
+}
+
+#[test]
+fn unknown_pack_error_names_the_full_registry() {
+    let error = trace("cobol", CLEAN).expect_err("unknown pack");
+    assert!(error.contains("cobol"), "error: {error}");
+    // The hint lists every registered pack, not a hardcoded pair.
+    for name in ["json", "toml", "python", "ini", "csv", "markdown"] {
+        assert!(error.contains(name), "error must list `{name}`: {error}");
+    }
+}
+
+#[test]
+fn exit_codes_for_generic_packs() {
+    let good = temp_file("trace-good.py", "x = 1");
+    let bad = temp_file("trace-bad.py", "x = @");
+    let good_path = good.to_string_lossy().into_owned();
+    let bad_path = bad.to_string_lossy().into_owned();
+    assert_eq!(run(&["trace", "python", &good_path]), OK);
+    assert_eq!(run(&["trace", "python", &bad_path]), FAIL);
+    assert_eq!(run(&["trace", "python", &bad_path, "--json"]), FAIL);
+    // Unreadable file through a generic pack → 2.
+    let missing = temp_dir().join("trace-missing-does-not-exist.py");
+    let missing_path = missing.to_string_lossy().into_owned();
+    assert_eq!(run(&["trace", "python", &missing_path]), USAGE);
+    let _ = std::fs::remove_file(good);
+    let _ = std::fs::remove_file(bad);
+}
+
 /// Run the CLI; arguments after the program name.
 fn run(args: &[&str]) -> i32 {
     cli::run(args.iter().copied()).expect("clap parse")
