@@ -108,6 +108,12 @@ mod recipe_recovery_plan {
         "/../../docs/cookbook/recipes/recovery_plan.rs"
     ));
 }
+mod recipe_generated_parser {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/cookbook/recipes/generated_parser.rs"
+    ));
+}
 
 // ---------------------------------------------------------------------------
 // 2-4. Book ↔ cookbook sync and link checks.
