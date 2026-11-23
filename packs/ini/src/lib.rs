@@ -12,9 +12,9 @@
 //! # Trivia discipline (ADR-008)
 //!
 //! Whitespace (including the newlines that terminate lines) and
-//! comments are never token events — they ride [`TriviaRecord`]s
-//! attached at tree-build time, so `render(parse(x)) == x`
-//! byte-for-byte.
+//! comments are never token events — they ride
+//! `runtime_core::sink::TriviaRecord`s attached at tree-build time, so
+//! `render(parse(x)) == x` byte-for-byte.
 
 pub mod reference;
 
