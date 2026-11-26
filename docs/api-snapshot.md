@@ -21,6 +21,14 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 
 ## crates/cli
 
+- src/import.rs: pub struct Imported {
+- src/import.rs: pub kdl: String,
+- src/import.rs: pub report: ImportReport,
+- src/import.rs: pub enum ImportCommandError {
+- src/import.rs: pub fn import_document(source: &str) -> Result<Imported, ImportCommandError> {
+- src/import.rs: pub fn render_json(report: &ImportReport) -> String {
+- src/lib.rs: pub mod import;
+- src/lib.rs: pub mod pgo;
 - src/lib.rs: pub mod trace;
 - src/lib.rs: pub struct Cli {
 - src/lib.rs: pub command: Command,
@@ -29,6 +37,21 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub const FAIL: i32 = 1;
 - src/lib.rs: pub const USAGE: i32 = 2;
 - src/lib.rs: pub fn run<I, T>(args: I) -> Result<i32, String>
+- src/pgo.rs: pub struct PgoPlan {
+- src/pgo.rs: pub pack: String,
+- src/pgo.rs: pub target: String,
+- src/pgo.rs: pub bench_suite: Option<String>,
+- src/pgo.rs: pub out_dir: String,
+- src/pgo.rs: pub corpus: Vec<String>,
+- src/pgo.rs: pub phases: Vec<String>,
+- src/pgo.rs: pub manifest: String,
+- src/pgo.rs: pub script: String,
+- src/pgo.rs: pub enum PgoError {
+- src/pgo.rs: pub struct PgoArtifacts {
+- src/pgo.rs: pub files: Vec<String>,
+- src/pgo.rs: pub fn plan(pack: &str, corpus: &[String], out_dir: &str) -> Result<PgoPlan, PgoError> {
+- src/pgo.rs: pub fn emit(plan: &PgoPlan) -> std::io::Result<PgoArtifacts> {
+- src/pgo.rs: pub fn render_json(plan: &PgoPlan) -> String {
 - src/trace.rs: pub struct TraceOp {
 - src/trace.rs: pub op: &'static str,
 - src/trace.rs: pub token: String,
