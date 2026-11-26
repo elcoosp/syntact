@@ -6,6 +6,56 @@ the [semver policy](docs/semver-policy.md).
 
 ## [Unreleased]
 
+### PGO superinstruction mining — the interpreter's fused token shifts
+
+- **descent**: [`superinstr`] + [`parse_events_with`] — the O3 tier's
+  "superinstruction fusion" for the descriptor interpreter (roadmap
+  §7.10, §10.2, §12.2 "superinstruction mining", the data-driven
+  synthesis of §1.3 #16). [`mine`] profiles the §5.2 `profile/` corpus
+  idea into a [`SuperSet`] of hot adjacent token-shift pairs — only
+  pairs observed ≥ `min_count` times enter the table ("only from PGO
+  hot paths"), ordered count-descending with kind-ordered tie-breaks
+  and capped (the mined table is a diff-stable, reviewable artifact);
+  [`parse_events_with`] runs the engine with the table so every maximal
+  `Pat::Tok` run whose adjacent pairs are hot executes as ONE fused
+  dispatch, checks-and-consumes in a single feed lookup per token, and
+  keeps the `Seq` committed-prefix discipline on mid-run mismatch. The
+  fused output is conformance-gated to equal [`parse_events`]'s run
+  byte for byte on valid AND malformed input (`crates/descent/tests/
+  superinstr.rs`, the §10.2 "conformance-gated" criterion; the lowered
+  JSON pipeline is in the gate). Measured honestly
+  (`bench/benches/superinstr.rs`): on the JSON fixture the fused path
+  lands ~5–7% behind the generic interpreter — below the §10.2 ≥10%
+  ship gate, so the table stays an opt-in per-grammar,
+  decision-by-measurement artifact (the ADR-010 pattern) and the
+  default [`parse_events`] path is untouched; deeper fusion sites (the
+  `Alt` dispatch, the Pratt atom) are the follow-up. Mining cost is
+  bench-per-corpus (`superinstr/mine/*`). Consumer example
+  `crates/descent/examples/superinstr.rs`
+  (`cargo run -p descent --example superinstr`).
+
+### The parallel query drive — issue 036's execution half
+
+- **runtime-core**: [`parallel_query`] now scans its chunks on scoped
+  worker threads instead of only planning for them, and
+  [`parallel_query_with`] is the general form taking any scan predicate
+  (the kind-set query shape) — issue 036's "parallel query mode over
+  the SoA chunk plan with deterministic ordered merge", the same
+  `std::thread::scope` drive the structural index's region-parallel
+  validation runs on: workers own contiguous ascending chunk ranges,
+  per-worker hit lists join in worker order, and the final
+  ascending-start sort keeps the merge contract explicit — the merged
+  output IS the sequential scan byte-for-byte at every fan-out
+  (`0` = `available_parallelism`, any count capped at the chunk
+  count), pinned by parity/determinism/exactly-once-scan tests over a
+  50k-token seeded corpus (`crates/runtime-core/tests/
+  parallel_query.rs`). Measured (`bench/benches/persistent_query.rs`):
+  on the 50k-token corpus the scoped drive's spawn overhead dominates
+  (sequential ~79µs vs w2 ~143µs in the bench build) — the contract
+  delivered here is the parallel mode + deterministic merge; a
+  persistent worker pool is the follow-up. Consumer example updated
+  (`crates/runtime-core/examples/persistent_query.rs`).
+
 ### The PGO pipeline emission — the compiler pipeline's 13th pass
 
 - **cli**: [`syntact pgo`](crates/cli/src/pgo.rs) — the pass-13
