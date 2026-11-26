@@ -29,6 +29,14 @@
 //! - `pack-lsp` — the pack language server over stdio: diagnostics,
 //!   outline symbols, folding, semantic tokens, highlights, and
 //!   selection ranges for the ten shipped pack languages (issue 042).
+//! - `pgo <FILES…> [--pack <PACK>] --out <DIR>` — the PGO pipeline
+//!   emission (roadmap §6.1 pass 13, ADR-014): a deterministic
+//!   instrument → train → merge → use → bench artifact set over the
+//!   profile corpus for any registered pack.
+//! - `import <GRAMMAR.js> [-o <FILE>]` — the tree-sitter adoption wedge
+//!   (roadmap §9.1, ADR-015): convert a `grammar.js` into gir-surface
+//!   KDL through the importer (issue 037), gated to load back through
+//!   `gir-syntax`, with the mapped/dropped/why conversion report.
 //!
 //! [`run`] is a pure function from arguments to an exit code, so the
 //! integration tests drive it directly.
@@ -40,6 +48,8 @@ use gir_ir::Grammar;
 use pack_registry::PackRegistry;
 use runtime_core::input::Source;
 
+pub mod import;
+pub mod pgo;
 pub mod trace;
 
 /// The `syntact` command line.
@@ -122,6 +132,38 @@ pub enum Command {
         #[arg(long, default_value_t = lsp::transport::DEFAULT_MAX_MESSAGE)]
         max_message: usize,
     },
+    /// Emit the PGO pipeline for a registered pack: instrument, train,
+    /// merge, and profile-use scripts over the profile corpus (roadmap
+    /// §6.1 pass 13, ADR-014).
+    Pgo {
+        /// Profile-corpus documents to train on (the §5.2 `profile/`
+        /// idea; stdin (`-`) cannot be baked into the emitted pipeline).
+        #[arg(value_name = "FILE", num_args = 1..)]
+        files: Vec<String>,
+        /// The pack to drive (default `json`).
+        #[arg(short = 'p', long = "pack", value_name = "PACK")]
+        pack: Option<String>,
+        /// Directory for the emitted artifacts (created if missing).
+        #[arg(short = 'o', long = "out", value_name = "DIR")]
+        out: Option<String>,
+        /// Emit machine-readable JSON instead of text.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Import a tree-sitter `grammar.js` into the gir surface (roadmap
+    /// §9.1, ADR-015): the converted KDL goes to stdout or `-o <FILE>`,
+    /// with the conversion report (mapped/dropped/why).
+    Import {
+        /// The tree-sitter grammar.js file (`-` reads stdin).
+        #[arg(value_name = "GRAMMAR_JS")]
+        file: String,
+        /// Write the converted KDL grammar here instead of stdout.
+        #[arg(short = 'o', long = "out", value_name = "FILE")]
+        out: Option<String>,
+        /// Print the conversion report as JSON instead of the grammar.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Exit codes: 0 ok, 1 negative verdict, 2 usage/IO error.
@@ -156,6 +198,13 @@ where
         Command::Trace { pack, file, json } => cmd_trace(&pack, &file, json),
         Command::Lsp { max_message } => cmd_lsp(max_message),
         Command::PackLsp { max_message } => cmd_pack_lsp(max_message),
+        Command::Pgo {
+            files,
+            pack,
+            out,
+            json,
+        } => cmd_pgo(&files, pack.as_deref(), out.as_deref(), json),
+        Command::Import { file, out, json } => cmd_import(&file, out.as_deref(), json),
     })
 }
 
@@ -178,6 +227,66 @@ fn cmd_pack_lsp(max_message: usize) -> i32 {
     let mut stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
     lsp::pack::server::serve(&mut BufReader::new(&mut stdin), &mut stdout, max_message)
+}
+
+/// Emit the PGO pipeline for a pack over its profile corpus (roadmap
+/// §6.1 pass 13, ADR-014): plan (registry-routed, named refusals), then
+/// write `manifest.kdl` + `pgo.sh` into the out dir.
+fn cmd_pgo(files: &[String], pack: Option<&str>, out: Option<&str>, json: bool) -> i32 {
+    if files.is_empty() {
+        eprintln!("pgo: no corpus documents given");
+        return USAGE;
+    }
+    let Some(out_dir) = out else {
+        eprintln!("pgo: --out <DIR> is required (the artifacts have to land somewhere)");
+        return USAGE;
+    };
+    // Stdin has no path to bake into the emitted train phase, and every
+    // corpus file must exist now: the plan hardcodes the paths.
+    if files.iter().any(|file| file.as_str() == "-") {
+        eprintln!(
+            "pgo: corpus `-` (stdin) cannot be baked into the emitted pipeline; pass file paths"
+        );
+        return USAGE;
+    }
+    for file in files {
+        if std::fs::metadata(file).is_err() {
+            eprintln!("{file}: unreadable");
+            return USAGE;
+        }
+    }
+    let plan = match pgo::plan(pack.unwrap_or("json"), files, out_dir) {
+        Ok(plan) => plan,
+        Err(error) => {
+            eprintln!("{error}");
+            return USAGE;
+        }
+    };
+    match pgo::emit(&plan) {
+        Ok(artifacts) => {
+            if json {
+                print!("{}", pgo::render_json(&plan));
+            } else {
+                println!(
+                    "emitted the pgo pipeline for `{}` → {} ({})",
+                    plan.pack,
+                    plan.out_dir,
+                    artifacts.files.join(", ")
+                );
+                println!("phases: {}", plan.phases.join(" → "));
+                println!(
+                    "train on {} corpus document(s); next: sh {}/pgo.sh instrument",
+                    plan.corpus.len(),
+                    plan.out_dir
+                );
+            }
+            OK
+        }
+        Err(error) => {
+            eprintln!("{}: {error}", plan.out_dir);
+            USAGE
+        }
+    }
 }
 
 /// Read a file (or stdin for `-`).
@@ -464,6 +573,39 @@ fn cmd_trace(pack: &str, file: &str, json: bool) -> i32 {
             USAGE
         }
     }
+}
+
+/// Import a tree-sitter `grammar.js` (roadmap §9.1, ADR-015): convert
+/// through the importer (issue 037), gate the surface through
+/// `gir-syntax`, then print or write the KDL with its conversion
+/// report.
+fn cmd_import(file: &str, out: Option<&str>, json: bool) -> i32 {
+    let Ok(text) = read_input(file) else {
+        return USAGE;
+    };
+    let imported = match import::import_document(&text) {
+        Ok(imported) => imported,
+        Err(error) => {
+            eprintln!("{error}");
+            return FAIL;
+        }
+    };
+    if json {
+        print!("{}", import::render_json(&imported.report));
+        return OK;
+    }
+    if let Some(out_path) = out {
+        if let Err(error) = std::fs::write(out_path, &imported.kdl) {
+            eprintln!("{out_path}: {error}");
+            return USAGE;
+        }
+        print!("{}", imported.report);
+        println!("wrote {out_path} ({} bytes)", imported.kdl.len());
+        return OK;
+    }
+    print!("{}", imported.kdl);
+    print!("{}", imported.report);
+    OK
 }
 
 /// Load a grammar from the KDL surface (issue 004 loader).
