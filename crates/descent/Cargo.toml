@@ -12,6 +12,9 @@ authors.workspace = true
 runtime-core.workspace = true
 
 [dev-dependencies]
+descent-lower.workspace = true
+gir-syntax.workspace = true
+lexgen.workspace = true
 packs-json.workspace = true
 pretty_assertions.workspace = true
 
