@@ -6,6 +6,53 @@ the [semver policy](docs/semver-policy.md).
 
 ## [Unreleased]
 
+### Persistent-red is loom-clean — the model-checked concurrency contract
+
+- **runtime-core**: the persistent-red contract
+  ([`RedHandle`], [`Version`], [`count_shared`]) is now model-checked,
+  not prose-asserted (roadmap §11.2 "loom for the persistent-red
+  mode", §12.3 P4 gate "persistent-red mode loom-clean"). A test-only
+  `loom` cargo feature swaps the persistent module's version-cell
+  `Arc` for loom's model type — the REAL handle participates in the
+  interleaving search (tree internals stay on the kernel's `std` Arcs,
+  which carry no concurrency of their own); `crates/runtime-core/
+  tests/loom_red.rs` explores every schedule of a single writer
+  publishing to two readers and of a reader retaining a version across
+  three publishes, pinning: whole-version publication (readers never
+  observe a half-published tree — a byte-sum walk proves every
+  snapshot complete), cross-version structural sharing (the shared
+  leaf `Arc` is pointer-identical, witnessed by `count_shared` on the
+  retained history), version retention (strictly increasing numbers,
+  the reader's snapshot alive after the writer exits — strong-count
+  proven), and the single-writer/multi-reader shape. Run:
+  `cargo test -p runtime-core --features loom`. The crate's own
+  persistent unit tests run through a `run_model` shim (plain
+  execution normally, loom's scheduler under the feature).
+
+### Region-parallel chunk drive — the parallel half of the chunk seam
+
+- **structural-index**: [`validate_chunks_parallel`] +
+  [`validate_chunks_parallel_with`] + [`validate_plan_parallel`] — the
+  chunk plan now executes on scoped worker threads instead of only
+  planning for them (roadmap §7.9 "parallel chunk parsing", §12.2
+  "region-parallel scanning", the execution half issue 032 left as the
+  planning API). `std::thread::scope` fan-out, no `unsafe`, one fresh
+  [`ChunkValidator`] per chunk via the factory seam (stateful checkers
+  never see another chunk's bytes), workers capped at the chunk count
+  with `0` resolving to `available_parallelism`, and the deterministic
+  ordered merge: chunks are planned in scan order, workers own
+  contiguous ascending ranges, and per-worker fault lists join in
+  worker order — the merged [`ChunkReport`] IS the sequential
+  [`validate_chunks`] verdict byte-for-byte, pinned by parity tests at
+  every fan-out over clean + faulted + 64-seed corpus sources (with an
+  engagement gate keeping the plans multi-chunk). Clipping semantics
+  are shared with the sequential drive through one `chunk_text`
+  helper, so the two drives cannot drift. Benchmarked
+  sequential vs w1/w2/w4/w8/auto (`bench/benches/region_parallel.rs` —
+  ~1.9× on the 8-chunk fixture, auto workers, debug build); consumer
+  example `crates/structural-index/examples/region_parallel.rs`
+  (`cargo run -p structural-index --example region_parallel`).
+
 ### Gated drives — the step-gated early-exit seam
 
 - **runtime-core**: [`DriveGate`] + [`drive_sink_until`] — the strict
