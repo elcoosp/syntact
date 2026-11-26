@@ -88,26 +88,33 @@ impl ChunkValidator for ChunkFaultScanner {
     }
 }
 
+/// Clip a chunk's bounds to the source and borrow its exact byte
+/// range — the clipping discipline BOTH the sequential and the
+/// region-parallel drives apply, so their verdicts stay comparable:
+/// out-of-range chunk bounds clip to the source (the same discipline
+/// the scanner applies to region records); a bound that does not land
+/// on a char boundary scans as empty — unreachable for `plan_chunks`
+/// plans, whose boundaries always follow an ASCII byte.
+pub(crate) fn chunk_text<'s>(source: &'s str, chunk: &ChunkPlan) -> &'s str {
+    let bytes = source.as_bytes();
+    let start = (chunk.start as usize).min(bytes.len());
+    let end = (chunk.end as usize).min(bytes.len()).max(start);
+    std::str::from_utf8(&bytes[start..end]).unwrap_or("")
+}
+
 /// Validate every chunk of `plan` with `validator`, merging the
 /// verdicts. Chunk-local fault offsets are rebased into source
 /// coordinates; the attribution points at the plan index the fault
-/// came from. Out-of-range chunk bounds clip to the source (the same
-/// discipline the scanner applies to region records); a bound that
-/// does not land on a char boundary scans as empty — unreachable for
-/// `plan_chunks` plans, whose boundaries always follow an ASCII byte.
+/// came from.
 #[must_use]
 pub fn validate_chunks_with(
     source: &str,
     plan: &[ChunkPlan],
     validator: &mut dyn ChunkValidator,
 ) -> ChunkReport {
-    let bytes = source.as_bytes();
     let mut faults = Vec::new();
     for (idx, chunk) in plan.iter().enumerate() {
-        let start = (chunk.start as usize).min(bytes.len());
-        let end = (chunk.end as usize).min(bytes.len()).max(start);
-        let text = std::str::from_utf8(&bytes[start..end]).unwrap_or("");
-        if let Err(fault) = validator.validate_chunk(text) {
+        if let Err(fault) = validator.validate_chunk(chunk_text(source, chunk)) {
             faults.push(ChunkFault {
                 chunk: idx,
                 fault: rebase(fault, chunk.start),
@@ -138,7 +145,7 @@ pub fn validate_plan(source: &str, index: &RegionIndex, target: usize) -> ChunkR
 /// Rebase a chunk-local fault into source coordinates
 /// (`UnclosedBraces` carries no offset). Chunk-local offsets never
 /// exceed the chunk length, so the add cannot outrun the source.
-fn rebase(fault: StructuralFault, base: u32) -> StructuralFault {
+pub(crate) fn rebase(fault: StructuralFault, base: u32) -> StructuralFault {
     match fault {
         StructuralFault::UnterminatedString(at) => {
             StructuralFault::UnterminatedString(at.saturating_add(base))
