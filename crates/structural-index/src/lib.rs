@@ -37,9 +37,15 @@
 //! - **Chunk planning**: [`plan::plan_chunks`] cuts the source into
 //!   contiguous, balanced, deterministic chunks whose boundaries sit at
 //!   depth-0 code positions — each chunk is independently parseable.
+//! - **Region-parallel drive**: [`parallel::validate_chunks_parallel`]
+//!   executes a chunk plan on scoped worker threads (fresh validator
+//!   per chunk, deterministic scan-order merge, fan-out capped at the
+//!   chunk count) — the parallel verdict IS the sequential verdict,
+//!   pinned by tests (the §12.2 region-parallel scanning item).
 
 pub mod chunks;
 pub mod index;
+pub mod parallel;
 pub mod plan;
 pub mod scan;
 pub mod sink;
@@ -49,6 +55,9 @@ pub use chunks::{
     validate_chunks_with, validate_plan,
 };
 pub use index::{RegionIndex, RegionKind};
+pub use parallel::{
+    validate_chunks_parallel, validate_chunks_parallel_with, validate_plan_parallel,
+};
 pub use plan::{ChunkPlan, StructuralFault, plan_chunks, validate_fast};
 pub use scan::{scan, scan_reference};
 pub use sink::{FaultScanner, RegionSink, scan_regions};
