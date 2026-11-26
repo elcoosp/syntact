@@ -1,4 +1,3 @@
-#![cfg(feature = "loom")]
 //! The loom model harness for the persistent-red contract — the
 //! "persistent-red mode loom-clean" P4 exit gate (roadmap §12.3,
 //! §11.2 "loom for the persistent-red mode"). The crate's `loom`
@@ -22,6 +21,7 @@
 //!   strictly increasing numbers, and a version a reader still holds
 //!   stays alive (strong count proves exactly who holds it after the
 //!   writer exits).
+#![cfg(feature = "loom")]
 
 use loom::sync::{Arc, Mutex};
 use loom::thread;
