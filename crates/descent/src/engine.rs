@@ -9,6 +9,7 @@ use runtime_core::ERROR_KIND;
 use runtime_core::events::Event;
 
 use crate::desc::{Desc, Pat};
+use crate::superinstr::SuperSet;
 
 /// The index into the diagnostic side table meaning "syntax error" (the
 /// only message the v0 engine emits).
@@ -26,7 +27,9 @@ pub struct ModeCrossing {
 }
 
 /// The output of one engine run — the reference-parser contract.
-#[derive(Debug, Clone, Default)]
+/// (`PartialEq`/`Eq` support the conformance gates: a fused superinstruction
+/// run must equal the generic run byte for byte, `tests/superinstr.rs`.)
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Run {
     /// Raw events (no implicit root; wrap before [`crate::green_tree`]).
     pub events: Vec<Event>,
@@ -41,7 +44,7 @@ pub struct Run {
 }
 
 /// Interpreter state.
-struct Engine<'d, 'f> {
+struct Engine<'d, 'f, 's> {
     desc: &'d Desc,
     /// The token feed: `(kind, clean range)`, non-overlapping, ascending.
     feed: &'f [(u16, Range<u32>)],
@@ -51,6 +54,9 @@ struct Engine<'d, 'f> {
     /// End of the last emitted span (trivia fills the gaps).
     last_end: u32,
     run: Run,
+    /// The mined superinstruction table (`None` = the generic interpreter,
+    /// zero fast-path overhead).
+    supers: Option<&'s SuperSet>,
 }
 
 /// Interpret `desc` over `feed`, producing the full run (events, clean
@@ -61,6 +67,21 @@ struct Engine<'d, 'f> {
 /// discipline — see `packs_json::reference`).
 #[must_use]
 pub fn parse_events(desc: &Desc, feed: &[(u16, Range<u32>)], source: &str) -> Run {
+    parse_events_with(desc, feed, source, None)
+}
+
+/// Interpret `desc` over `feed` with a mined superinstruction table
+/// ([`crate::superinstr::mine`]): leading token-shift runs whose adjacent
+/// pairs are hot execute as one fused dispatch. The output contract is the
+/// generic [`parse_events`] run, byte for byte — the conformance gate is
+/// pinned by `tests/superinstr.rs` (roadmap §10.2).
+#[must_use]
+pub fn parse_events_with(
+    desc: &Desc,
+    feed: &[(u16, Range<u32>)],
+    source: &str,
+    supers: Option<&SuperSet>,
+) -> Run {
     let mut engine = Engine {
         desc,
         feed,
@@ -68,13 +89,14 @@ pub fn parse_events(desc: &Desc, feed: &[(u16, Range<u32>)], source: &str) -> Ru
         pos: 0,
         last_end: 0,
         run: Run::default(),
+        supers,
     };
     let _ = engine.pat(&desc.start, &[]);
     engine.fill_trivia();
     engine.run
 }
 
-impl Engine<'_, '_> {
+impl Engine<'_, '_, '_> {
     /// Snapshot for backtracking (`Alt`/`Opt`/`Seq` rollback).
     fn mark(&self) -> (usize, usize, usize, u32) {
         (
@@ -119,6 +141,36 @@ impl Engine<'_, '_> {
         self.run.tokens.push((*kind, range.clone()));
         self.last_end = range.end;
         self.pos += 1;
+        true
+    }
+
+    /// The fused token-shift superinstruction (§10.2): consume each
+    /// expected kind in order — emitting exactly what per-token
+    /// `Pat::Tok` dispatches would — and stop at the first mismatch,
+    /// keeping the committed prefix (the `Seq` discipline). The shift
+    /// checks and consumes in ONE feed lookup per token (the generic
+    /// path pays two: the `Tok` match plus [`Engine::bump`]'s own
+    /// `get`), which is where the fused dispatch's win lives.
+    fn token_run(&mut self, items: &[Pat]) -> bool {
+        for item in items {
+            let Pat::Tok(expected) = item else {
+                return false; // unreachable: a hot run is all-`Tok` by construction
+            };
+            let Some((kind, range)) = self.feed.get(self.pos) else {
+                return false;
+            };
+            if kind != expected {
+                return false;
+            }
+            self.fill_trivia();
+            self.run.events.push(Event::Token {
+                kind: *kind,
+                n_raw: 1,
+            });
+            self.run.tokens.push((*kind, range.clone()));
+            self.last_end = range.end;
+            self.pos += 1;
+        }
         true
     }
 
@@ -185,7 +237,19 @@ impl Engine<'_, '_> {
                 }
             }
             Pat::Seq(items) => {
-                let all_matched = items.iter().all(|item| self.pat(item, sync));
+                // PGO superinstruction fast path (§10.2): a hot leading
+                // token-shift run executes as ONE fused dispatch. The
+                // fused loop bumps through the same consume path per
+                // token and keeps the committed-prefix discipline on a
+                // mid-run mismatch, so the output is the generic run's,
+                // byte for byte (tests/superinstr.rs).
+                let fused = self.supers.map_or(0, |set| hot_run_len(set, items));
+                let all_matched = if fused > 0 {
+                    self.token_run(&items[..fused])
+                        && items[fused..].iter().all(|item| self.pat(item, sync))
+                } else {
+                    items.iter().all(|item| self.pat(item, sync))
+                };
                 // Keep the committed prefix even on failure: the rule
                 // boundary turns it into the recovery region.
                 all_matched
@@ -329,11 +393,11 @@ impl Engine<'_, '_> {
                     let mut budget: u32 = 4;
                     self.recover(&[], &mut budget);
                 }
-            } else if !self.climb_primary(table, sub_start) {
+            } else if !self.climb_primary(table) {
                 self.reset(mark);
                 return false;
             }
-        } else if !self.climb_primary(table, sub_start) {
+        } else if !self.climb_primary(table) {
             self.reset(mark);
             return false;
         }
@@ -390,7 +454,7 @@ impl Engine<'_, '_> {
     /// atom. A prefix node closes as soon as its operand climb returns —
     /// same-level operators then wrap it via the caller's precede insert
     /// (so `-a + b` is ADD[NEG[a], +, b], never `-a` swallowing `+ b`).
-    fn climb_primary(&mut self, table: &crate::desc::PrattDesc, _sub_start: usize) -> bool {
+    fn climb_primary(&mut self, table: &crate::desc::PrattDesc) -> bool {
         if let Some(unary) = table
             .prefix
             .iter()
@@ -411,4 +475,27 @@ impl Engine<'_, '_> {
             self.pat(&table.atom, &[])
         }
     }
+}
+
+/// The length of the leading all-`Pat::Tok` run of `items` whose adjacent
+/// pairs are hot in `set` — the fused fast path's trigger (0 = no fusion:
+/// run shorter than a pair, a non-`Tok` item in the lead, or a cold pair).
+/// Longer runs compose from mined pairs — no second mining pass.
+#[inline]
+fn hot_run_len(set: &SuperSet, items: &[Pat]) -> usize {
+    let mut previous: Option<u16> = None;
+    let mut run = 0_usize;
+    for item in items {
+        let Pat::Tok(kind) = item else {
+            break;
+        };
+        if let Some(previous_kind) = previous {
+            if !set.is_hot_pair(previous_kind, *kind) {
+                break;
+            }
+        }
+        previous = Some(*kind);
+        run += 1;
+    }
+    if run >= 2 { run } else { 0 }
 }
