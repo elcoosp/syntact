@@ -99,7 +99,10 @@ pub fn plan_chunks(source: &str, index: &RegionIndex, target: usize) -> Vec<Chun
             .filter(|c| *c > 0 && *c < len)
             .min_by_key(|c| c.abs_diff(u32::try_from(split).unwrap_or(u32::MAX)))
             .unwrap_or(len);
-        if *boundaries.last().unwrap() != chosen {
+        // The boundary list is seeded with `0`, so `last()` always
+        // finds an element during merging — the invariant expressed in
+        // types (`last() != Some(&chosen)`), not through an `unwrap`.
+        if boundaries.last() != Some(&chosen) {
             boundaries.push(chosen);
         }
     }
