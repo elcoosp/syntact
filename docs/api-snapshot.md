@@ -1302,9 +1302,11 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/chunks.rs: pub fn first_fault(&self) -> Option<ChunkFault> {
 - src/chunks.rs: pub trait ChunkValidator {
 - src/chunks.rs: pub struct ChunkFaultScanner;
+- src/chunks.rs: pub(crate) fn chunk_text<'s>(source: &'s str, chunk: &ChunkPlan) -> &'s str {
 - src/chunks.rs: pub fn validate_chunks_with(
 - src/chunks.rs: pub fn validate_chunks(source: &str, plan: &[ChunkPlan]) -> ChunkReport {
 - src/chunks.rs: pub fn validate_plan(source: &str, index: &RegionIndex, target: usize) -> ChunkReport {
+- src/chunks.rs: pub(crate) fn rebase(fault: StructuralFault, base: u32) -> StructuralFault {
 - src/index.rs: pub enum RegionKind {
 - src/index.rs: pub fn from_u8(byte: u8) -> Self {
 - src/index.rs: pub struct RegionIndex {
@@ -1322,14 +1324,19 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/index.rs: pub fn bytes_per_region(&self) -> usize {
 - src/lib.rs: pub mod chunks;
 - src/lib.rs: pub mod index;
+- src/lib.rs: pub mod parallel;
 - src/lib.rs: pub mod plan;
 - src/lib.rs: pub mod scan;
 - src/lib.rs: pub mod sink;
 - src/lib.rs: pub use chunks::{
 - src/lib.rs: pub use index::{RegionIndex, RegionKind};
+- src/lib.rs: pub use parallel::{
 - src/lib.rs: pub use plan::{ChunkPlan, StructuralFault, plan_chunks, validate_fast};
 - src/lib.rs: pub use scan::{scan, scan_reference};
 - src/lib.rs: pub use sink::{FaultScanner, RegionSink, scan_regions};
+- src/parallel.rs: pub fn validate_chunks_parallel(source: &str, plan: &[ChunkPlan], workers: usize) -> ChunkReport {
+- src/parallel.rs: pub fn validate_chunks_parallel_with<F, V>(
+- src/parallel.rs: pub fn validate_plan_parallel(
 - src/plan.rs: pub enum StructuralFault {
 - src/plan.rs: pub fn validate_fast(source: &str) -> Result<(), StructuralFault> {
 - src/plan.rs: pub struct ChunkPlan {
