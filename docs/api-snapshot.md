@@ -147,12 +147,24 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/engine.rs: pub errors: usize,
 - src/engine.rs: pub modes: Vec<ModeCrossing>,
 - src/engine.rs: pub fn parse_events(desc: &Desc, feed: &[(u16, Range<u32>)], source: &str) -> Run {
+- src/engine.rs: pub fn parse_events_with(
 - src/lib.rs: pub mod desc;
 - src/lib.rs: pub mod engine;
+- src/lib.rs: pub mod superinstr;
 - src/lib.rs: pub use desc::{Desc, InfixDesc, Pat, PrattDesc, RuleDesc, UnaryDesc};
-- src/lib.rs: pub use engine::{ModeCrossing, Run, parse_events};
+- src/lib.rs: pub use engine::{ModeCrossing, Run, parse_events, parse_events_with};
+- src/lib.rs: pub use superinstr::{SuperEntry, SuperSet, mine};
 - src/lib.rs: pub fn green_tree(
 - src/lib.rs: pub fn stream_is_balanced(run: &Run, source: &str, root_kind: u16) -> bool {
+- src/superinstr.rs: pub struct SuperEntry {
+- src/superinstr.rs: pub kinds: [u16; 2],
+- src/superinstr.rs: pub count: u64,
+- src/superinstr.rs: pub struct SuperSet {
+- src/superinstr.rs: pub fn entries(&self) -> &[SuperEntry] {
+- src/superinstr.rs: pub fn is_hot_pair(&self, first: u16, second: u16) -> bool {
+- src/superinstr.rs: pub fn len(&self) -> usize {
+- src/superinstr.rs: pub fn is_empty(&self) -> bool {
+- src/superinstr.rs: pub fn mine(feeds: &[&[(u16, Range<u32>)]], min_count: u64, max_entries: usize) -> SuperSet {
 
 ## crates/descent-lower
 
@@ -1213,6 +1225,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/persistent.rs: pub span: Range<u32>,
 - src/persistent.rs: pub fn plan_chunks(tokens: &[(u16, Range<u32>)], target: usize) -> Vec<Chunk> {
 - src/persistent.rs: pub fn parallel_query(tokens: &[(u16, Range<u32>)], wanted: u16, workers: usize) -> Vec<Hit> {
+- src/persistent.rs: pub fn parallel_query_with<F>(tokens: &[(u16, Range<u32>)], scan: F, workers: usize) -> Vec<Hit>
 - src/persistent.rs: pub fn sequential_query(tokens: &[(u16, Range<u32>)], wanted: u16) -> Vec<Hit> {
 - src/sink.rs: pub trait Sink {
 - src/sink.rs: pub fn drive_sink(
