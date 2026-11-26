@@ -90,5 +90,13 @@ harness = false
 name = "region_parallel"
 harness = false
 
+[[bench]]
+name = "superinstr"
+harness = false
+
+[[bench]]
+name = "persistent_query"
+harness = false
+
 [lints]
 workspace = true
