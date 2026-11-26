@@ -15,6 +15,7 @@ descent-lower.workspace = true
 gir-ir.workspace = true
 gir-syntax.workspace = true
 gir-analysis.workspace = true
+importer.workspace = true
 lr-shadow.workspace = true
 runtime-core.workspace = true
 lexgen.workspace = true
