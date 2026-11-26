@@ -27,14 +27,35 @@
 //!   to the sequential scan, seeded-corpus tested. The scan runs
 //!   single-threaded today; the chunk plan + pure per-chunk scan are
 //!   the seam a caller may parallelize (the merge stays deterministic).
+//!
+//! # Verification — loom-clean (roadmap §11.2, §12.3 P4 gate)
+//!
+//! The documented contract above is model-checked, not just
+//! prose-asserted: with the crate's `loom` feature enabled, the `Arc`
+//! below is loom's model type, so the REAL [`RedHandle`] /
+//! [`Version`] / [`count_shared`] types participate in the
+//! interleaving search of `crates/runtime-core/tests/loom_red.rs`
+//! (single-writer publish integrity, multi-reader snapshot sharing,
+//! structural sharing across versions, version retention under
+//! concurrent publishes). Run: `cargo test -p runtime-core --features
+//! loom`.
 
 use std::ops::Range;
+
+#[cfg(feature = "loom")]
+use loom::sync::Arc;
+#[cfg(not(feature = "loom"))]
 use std::sync::Arc;
 
 use crate::tree::{GreenChild, GreenNode};
 
 /// One published tree version: an immutable root plus its identity.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// (`PartialEq`/`Eq` are derived in normal builds; under the test-only
+/// `loom` feature the root is loom's model `Arc`, which implements
+/// neither — equality there is the pointer identity the harness
+/// asserts.)
+#[derive(Debug, Clone)]
+#[cfg_attr(not(feature = "loom"), derive(PartialEq, Eq))]
 pub struct Version {
     /// Monotonic version number (0 = the first publish).
     pub number: u64,
@@ -101,27 +122,49 @@ impl RedHandle {
 }
 
 /// Count the `Arc`-identical subtree pairs between two roots (a joint
-/// DFS; identity = `Arc::ptr_eq`).
+/// DFS; identity = `Arc::ptr_eq`). Under the test-only `loom` feature
+/// the roots are loom's model `Arc`s (the version cell the harness
+/// model-checks) while the child recursion runs on the kernel's `std`
+/// `Arc`s — [`GreenChild`] owns `std` `Arc`s in either build, so the
+/// tree below the root is identical.
+/// Count the `Arc`-identical subtree pairs between two roots (a joint
+/// DFS; identity = `Arc::ptr_eq`). Under the test-only `loom` feature
+/// the ROOT-level pointer check runs on loom's model `Arc` (the
+/// version cell the harness model-checks); in every build the child
+/// recursion runs on the kernel's `std` `Arc`s — [`GreenChild`] owns
+/// `std` `Arc`s either way, so the tree below the root is identical.
 #[must_use]
 pub fn count_shared(old: &Arc<GreenNode>, new: &Arc<GreenNode>) -> usize {
     if Arc::ptr_eq(old, new) {
         return 1; // this whole subtree is shared
     }
-    let (old_children, new_children) = (children_of(old), children_of(new));
-    if old_children.len() != new_children.len() || old.kind != new.kind {
+    if old.kind != new.kind || old.children.len() != new.children.len() {
         return 0;
     }
+    count_shared_children(&old.children, &new.children)
+}
+
+/// The subtree recursion over [`GreenChild`] slices on the kernel's
+/// `std` `Arc`s, identical under every build.
+fn count_shared_children(old_children: &[GreenChild], new_children: &[GreenChild]) -> usize {
     let mut total = 0;
     for (o, n) in old_children.iter().zip(new_children.iter()) {
         if let (GreenChild::Node(o), GreenChild::Node(n)) = (o, n) {
-            total += count_shared(o, n);
+            total += count_shared_std(o, n);
         }
     }
     total
 }
 
-fn children_of(node: &GreenNode) -> &[GreenChild] {
-    &node.children
+/// The identical-subtree recursion on `std` `Arc`s.
+fn count_shared_std(old: &std::sync::Arc<GreenNode>, new: &std::sync::Arc<GreenNode>) -> usize {
+    if std::sync::Arc::ptr_eq(old, new) {
+        return 1; // this whole subtree is shared
+    }
+    if old.kind != new.kind || old.children.len() != new.children.len() {
+        return 0;
+    }
+    count_shared_children(&old.children, &new.children)
 }
 
 /// One query hit: a token span plus its kind (the parallel scan's unit
@@ -225,10 +268,11 @@ pub fn sequential_query(tokens: &[(u16, Range<u32>)], wanted: u16) -> Vec<Hit> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Chunk, Hit, RedHandle, Version, parallel_query, plan_chunks, sequential_query};
+    use super::{
+        Arc, Chunk, Hit, RedHandle, Version, parallel_query, plan_chunks, sequential_query,
+    };
     use crate::tree::{GreenChild, GreenNode};
     use std::ops::Range;
-    use std::sync::Arc;
 
     fn tokens() -> Vec<(u16, Range<u32>)> {
         // kinds cycle 1..4 over 100 tokens
@@ -241,76 +285,96 @@ mod tests {
             .collect()
     }
 
+    /// Run a single-threaded test body through loom's scheduler under
+    /// the model-checking feature (loom's `Arc` panics outside a
+    /// model; `loom::model` replays the `Fn` body per schedule);
+    /// plain execution in normal builds.
+    #[cfg(not(feature = "loom"))]
+    fn run_model(body: impl Fn()) {
+        body();
+    }
+    #[cfg(feature = "loom")]
+    fn run_model(body: impl Fn() + Sync + Send + 'static) {
+        loom::model(body);
+    }
+
     #[test]
     fn publish_assigns_versions_and_retains() {
-        let mut handle = RedHandle::new();
-        assert_eq!(handle.version(), 0);
-        assert!(handle.current().is_none());
-        // Version 1.
-        let root1 = Arc::new(GreenNode {
-            kind: 0,
-            text_len: 4,
-            has_error: false,
-            children: Vec::new(),
+        run_model(|| {
+            let mut handle = RedHandle::new();
+            assert_eq!(handle.version(), 0);
+            assert!(handle.current().is_none());
+            // Version 1.
+            let root1 = Arc::new(GreenNode {
+                kind: 0,
+                text_len: 4,
+                has_error: false,
+                children: Vec::new(),
+            });
+            assert_eq!(handle.publish(root1.clone()), 0);
+            assert_eq!(handle.version(), 1);
+            // Version 2.
+            let root2 = Arc::new(GreenNode {
+                kind: 0,
+                text_len: 6,
+                has_error: false,
+                children: Vec::new(),
+            });
+            assert_eq!(handle.publish(root2), 0);
+            assert_eq!(handle.version(), 2);
+            assert_eq!(handle.history().len(), 2, "both versions retained");
+            let history: Vec<Version> = handle.history().to_vec();
+            assert_eq!(history[0].number, 1);
+            let last = handle.history().last().expect("history");
+            assert!(Arc::ptr_eq(handle.current().expect("current"), &last.root));
         });
-        assert_eq!(handle.publish(root1.clone()), 0);
-        assert_eq!(handle.version(), 1);
-        // Version 2.
-        let root2 = Arc::new(GreenNode {
-            kind: 0,
-            text_len: 6,
-            has_error: false,
-            children: Vec::new(),
-        });
-        assert_eq!(handle.publish(root2), 0);
-        assert_eq!(handle.version(), 2);
-        assert_eq!(handle.history().len(), 2, "both versions retained");
-        let history: Vec<Version> = handle.history().to_vec();
-        assert_eq!(history[0].number, 1);
-        let last = handle.history().last().expect("history");
-        assert!(Arc::ptr_eq(handle.current().expect("current"), &last.root));
     }
 
     #[test]
     fn sharing_counts_identical_subtrees() {
-        let leaf = || -> Arc<GreenNode> {
-            Arc::new(GreenNode {
-                kind: 1,
-                text_len: 2,
+        run_model(|| {
+            // The shared leaf lives INSIDE the trees — `GreenChild`
+            // stores the kernel's `std` `Arc` in every build (loom or
+            // not).
+            let leaf = || -> std::sync::Arc<GreenNode> {
+                std::sync::Arc::new(GreenNode {
+                    kind: 1,
+                    text_len: 2,
+                    has_error: false,
+                    children: Vec::new(),
+                })
+            };
+            // Old and new share the SAME leaf Arc.
+            let shared_leaf = leaf();
+            let old = Arc::new(GreenNode {
+                kind: 0,
+                text_len: 4,
                 has_error: false,
-                children: Vec::new(),
-            })
-        };
-        // Old and new share the SAME leaf Arc.
-        let shared_leaf = leaf();
-        let old = Arc::new(GreenNode {
-            kind: 0,
-            text_len: 4,
-            has_error: false,
-            children: vec![
-                GreenChild::Node(shared_leaf.clone()),
-                GreenChild::Token {
-                    kind: 2,
-                    range: 2..4,
-                },
-            ],
+                children: vec![
+                    GreenChild::Node(shared_leaf.clone()),
+                    GreenChild::Token {
+                        kind: 2,
+                        range: 2..4,
+                    },
+                ],
+            });
+            let new = Arc::new(GreenNode {
+                kind: 0,
+                text_len: 6,
+                has_error: false,
+                children: vec![
+                    GreenChild::Node(shared_leaf.clone()),
+                    GreenChild::Token {
+                        kind: 3,
+                        range: 4..6,
+                    },
+                ],
+            });
+            assert_eq!(super::count_shared(&old, &new), 1, "the leaf is shared");
+            let mut handle = RedHandle::new();
+            handle.publish(old);
+            assert_eq!(handle.publish(new), 1, "publish reports 1 shared subtree");
         });
-        let new = Arc::new(GreenNode {
-            kind: 0,
-            text_len: 6,
-            has_error: false,
-            children: vec![
-                GreenChild::Node(shared_leaf.clone()),
-                GreenChild::Token {
-                    kind: 3,
-                    range: 4..6,
-                },
-            ],
-        });
-        assert_eq!(super::count_shared(&old, &new), 1, "the leaf is shared");
-        let mut handle = RedHandle::new();
-        handle.publish(old);
-        assert_eq!(handle.publish(new), 1, "publish reports 1 shared subtree");
     }
 
     #[test]
