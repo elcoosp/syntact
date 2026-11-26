@@ -184,6 +184,8 @@ All subcommands run against the real pipeline (`crates/cli/src/lib.rs`); exit co
 | `syntact trace <PACK> <FILE>` | Per-region recovery events (offset, kind, repair ops, resync point) for every registered pack — repair ops for the JSON pack's LR planner, native recovery regions for the other packs; `--json` for machine-readable output |
 | `syntact lsp` | The `.gir` grammar language server over stdio |
 | `syntact pack-lsp` | The pack language server over stdio for the ten pack languages |
+| `syntact pgo <FILES…> [--pack <PACK>] --out <DIR>` | Emit the PGO pipeline for a pack (roadmap §6.1 pass 13): a deterministic instrument → train → merge → use → bench artifact set over the profile corpus; `--json` for machine-readable output |
+| `syntact import <GRAMMAR.js> [-o <FILE>]` | Convert a tree-sitter `grammar.js` into gir-surface KDL through the importer (issue 037), gated to load back through the loader, with the mapped/dropped/why conversion report; `--json` for machine-readable output |
 
 Both servers accept `--max-message` to bound one framed inbound message (default 8 MiB). For editor
 wiring, raw session transcripts, and what each server answers, see the book chapters on the
@@ -217,12 +219,14 @@ queries, recovery — read [the book](docs/book/SUMMARY.md).
 
 ## Learn more
 
-- [The syntact book](docs/book/SUMMARY.md) — nine chapters: getting started, the event protocol, the
-  pack walkthrough, incremental reparsing, queries, recovery, codegen, and the two language servers.
+- [The syntact book](docs/book/SUMMARY.md) — eleven chapters: getting started, the event protocol, the
+  pack walkthrough, incremental reparsing, queries, recovery, codegen, the PGO pipeline, the tree-sitter
+  import wedge, and the two language servers.
 - [Architecture and roadmap](docs/architecture-and-roadmap.md) — the full design with primary-source
   evidence pointers (oxc, tree-sitter, rust-analyzer, rowan, grmtools, lezer) and architecture decision records.
 - [Cookbook recipes](docs/cookbook/recipes/) — tested, executable examples: parsing, the event stream,
-  incremental reparse, queries, recovery planning, and the generated parser.
+  incremental reparse, queries, recovery planning, the generated parser, the PGO pipeline, and the
+  tree-sitter import.
 - [Semver policy](docs/semver-policy.md) and [API snapshot](docs/api-snapshot.md) — what the 1.0 promise
   covers and the frozen inventory that enforces it.
 - [`crates/cli/src/lib.rs`](crates/cli/src/lib.rs) — the CLI is a pure function from arguments to exit
