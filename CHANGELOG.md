@@ -6,6 +6,42 @@ the [semver policy](docs/semver-policy.md).
 
 ## [Unreleased]
 
+### The PGO pipeline emission — the compiler pipeline's 13th pass
+
+- **cli**: [`syntact pgo`](crates/cli/src/pgo.rs) — the pass-13
+  obligation ("PGO wiring: instrument profile corpus, emit cargo pgo
+  scripts, merge profiles", roadmap §6.1, ADR-014) as a
+  registry-routed command: name a registered pack and its profile
+  corpus (the §5.2 `profile/` idea) and get the complete
+  instrument → train → merge → use → bench pipeline as two
+  deterministic artifacts (`manifest.kdl`, `pgo.sh`). Training reuses
+  the engine end-to-end (the instrumented `syntact` binary drives its
+  `conformance` command over the corpus through the named pack), the
+  bench phase exists only where `crates/bench` registers a suite for
+  the pack, emission is byte-stable for identical inputs (ADR-013),
+  and every invalid input is a named refusal — unknown packs (with the
+  registered list), empty corpora, paths the emitted script could not
+  carry. Library seam `cli::pgo` (`plan` pure, `emit` filesystem,
+  `render_json` for `--json`); consumer example
+  `crates/cli/examples/pgo_pipeline.rs`; book chapter
+  `docs/book/pgo.md` with the `pgo_pipeline` recipe compiled by the
+  docs gate; API snapshot regenerated.
+
+### `syntact import` — the tree-sitter adoption wedge on the CLI
+
+- **cli**: `syntact import <GRAMMAR.js> [-o <FILE>]` (roadmap §9.1
+  command list, ADR-015) wires the importer library (issue 037) into
+  the command line: the converted gir surface goes to stdout or disk,
+  gated to load back through `gir-syntax` before anything is written
+  (the wedge gate: an import nobody can load is worthless), with the
+  mapped/dropped/why provenance log in text or `--json` form. Library
+  seam `cli::import` (`import_document` with the reload gate,
+  `render_json`); `importer` added to the workspace dependency table
+  and the cli manifest; consumer example
+  `crates/cli/examples/import_grammar.rs`; book chapter
+  `docs/book/import.md` with the `import_grammar` recipe compiled by
+  the docs gate; API snapshot regenerated.
+
 ### Persistent-red is loom-clean — the model-checked concurrency contract
 
 - **runtime-core**: the persistent-red contract
