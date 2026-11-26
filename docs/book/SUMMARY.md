@@ -10,5 +10,7 @@ packs that speak it, and the tooling built on top.
 - [Queries](queries.md)
 - [Recovery](recovery.md)
 - [Generating parser crates](codegen.md)
+- [The PGO pipeline](pgo.md)
+- [Importing tree-sitter grammars](import.md)
 - [Grammar language server](grammar-lsp.md)
 - [Pack language server](pack-lsp.md)
