@@ -28,9 +28,19 @@
 //! scanned in. The engine records hook crossings in [`Run::modes`]; the
 //! codegen monomorphizes per pinned mode (one specialization per mode
 //! instead of runtime dispatch at hot spots).
+//!
+//! ## PGO superinstructions (§10.2, §12.2)
+//!
+//! [`superinstr`] mines hot adjacent token-shift pairs from profile
+//! corpora (the data-driven synthesis of §1.3 #16) into a
+//! [`superinstr::SuperSet`]; [`parse_events_with`] runs the engine with
+//! the table so hot token-shift runs execute as one fused dispatch.
+//! The fused output is conformance-gated to equal [`parse_events`]'s
+//! run byte for byte.
 
 pub mod desc;
 pub mod engine;
+pub mod superinstr;
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -41,7 +51,8 @@ use runtime_core::sink::{TriviaRecord, drive_sink};
 use runtime_core::tree::{GreenNode, NodeCache, TreeBuilder};
 
 pub use desc::{Desc, InfixDesc, Pat, PrattDesc, RuleDesc, UnaryDesc};
-pub use engine::{ModeCrossing, Run, parse_events};
+pub use engine::{ModeCrossing, Run, parse_events, parse_events_with};
+pub use superinstr::{SuperEntry, SuperSet, mine};
 
 /// Wrap a run's events in one implicit root and drive them through the
 /// full tree integration (`process` → `drive_sink` → `TreeBuilder`).
