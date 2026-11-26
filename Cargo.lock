@@ -255,6 +255,7 @@ dependencies = [
  "gir-ir",
  "gir-syntax",
  "harness",
+ "importer",
  "incremental",
  "lexgen",
  "lr-shadow",
