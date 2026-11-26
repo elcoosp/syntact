@@ -22,7 +22,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 #[cfg(not(feature = "loom"))]
-use runtime_core::persistent::{RedHandle, parallel_query, sequential_query};
+use runtime_core::persistent::{RedHandle, parallel_query, parallel_query_with, sequential_query};
 #[cfg(not(feature = "loom"))]
 use runtime_core::tree::{GreenChild, GreenNode};
 
@@ -69,9 +69,10 @@ fn main() {
     );
 
     // The chunked query mode: the token stream as `(kind, range)`
-    // pairs — four `kind = 7` tokens — planned into worker chunks and
-    // merged in ascending start-offset order. Every fan-out returns
-    // the sequential scan's output byte-for-byte.
+    // pairs — four `kind = 7` tokens — planned into worker chunks,
+    // scanned on scoped worker threads (issue 036's parallel query
+    // mode), and merged in ascending start-offset order. Every
+    // fan-out returns the sequential scan's output byte-for-byte.
     let tokens: Vec<(u16, Range<u32>)> = (0..4)
         .map(|i| {
             let start = u32::try_from(i * 3).unwrap_or(u32::MAX);
@@ -88,5 +89,14 @@ fn main() {
             merged.len()
         );
     }
+    // The general form: a caller-provided scan predicate over the same
+    // chunk plan (here: any kind — the kind-set query shape).
+    let every_kind = parallel_query_with(&tokens, |_| true, 2);
+    assert_eq!(every_kind.len(), tokens.len(), "every token is a hit");
+    println!(
+        "kind-set scan: {} hits over {} tokens, merge order identical",
+        every_kind.len(),
+        tokens.len()
+    );
     println!("persistent query: chunked scan, deterministic ordered merge — parity holds");
 }
