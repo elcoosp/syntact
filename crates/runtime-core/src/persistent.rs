@@ -22,11 +22,13 @@
 //!   retained chain.
 //! - **Chunked merge determinism**: [`parallel_query`] splits the
 //!   token stream into chunks (the structural-index chunk plan shape),
-//!   scans each chunk, and merges the results in ascending
+//!   scans each chunk on scoped worker threads (the execution half of
+//!   issue 036's "parallel query mode" — the same
+//!   `std::thread::scope` drive the structural index's region-parallel
+//!   validation runs on), and merges the results in ascending
 //!   start-offset order — the merged output is byte-for-byte identical
-//!   to the sequential scan, seeded-corpus tested. The scan runs
-//!   single-threaded today; the chunk plan + pure per-chunk scan are
-//!   the seam a caller may parallelize (the merge stays deterministic).
+//!   to the sequential scan, seeded-corpus tested, whatever the thread
+//!   completion order.
 //!
 //! # Verification — loom-clean (roadmap §11.2, §12.3 P4 gate)
 //!
@@ -123,12 +125,6 @@ impl RedHandle {
 
 /// Count the `Arc`-identical subtree pairs between two roots (a joint
 /// DFS; identity = `Arc::ptr_eq`). Under the test-only `loom` feature
-/// the roots are loom's model `Arc`s (the version cell the harness
-/// model-checks) while the child recursion runs on the kernel's `std`
-/// `Arc`s — [`GreenChild`] owns `std` `Arc`s in either build, so the
-/// tree below the root is identical.
-/// Count the `Arc`-identical subtree pairs between two roots (a joint
-/// DFS; identity = `Arc::ptr_eq`). Under the test-only `loom` feature
 /// the ROOT-level pointer check runs on loom's model `Arc` (the
 /// version cell the harness model-checks); in every build the child
 /// recursion runs on the kernel's `std` `Arc`s — [`GreenChild`] owns
@@ -214,12 +210,32 @@ pub fn plan_chunks(tokens: &[(u16, Range<u32>)], target: usize) -> Vec<Chunk> {
     chunks
 }
 
-/// Scan one chunk for tokens matching `wanted` (the per-worker step —
-/// a pure function over the `SoA` token arrays).
-fn scan_chunk(chunk: &Chunk, tokens: &[(u16, Range<u32>)], wanted: u16) -> Vec<Hit> {
+/// Resolve the effective worker count (the structural index's
+/// region-parallel contract): `0` = auto
+/// ([`std::thread::available_parallelism`]), any count capped at the
+/// chunk count (never more workers than work), and zero chunks means
+/// zero workers (no threads are spawned at all).
+fn worker_count(workers: usize, chunks: usize) -> usize {
+    if chunks == 0 {
+        return 0;
+    }
+    let requested = if workers == 0 {
+        std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
+    } else {
+        workers
+    };
+    requested.max(1).min(chunks)
+}
+
+/// Scan one chunk for tokens passing `scan` (the per-worker step — a
+/// pure function over the `SoA` token arrays).
+fn scan_chunk<F>(chunk: &Chunk, tokens: &[(u16, Range<u32>)], scan: &F) -> Vec<Hit>
+where
+    F: Fn(u16) -> bool,
+{
     tokens[chunk.first..chunk.last]
         .iter()
-        .filter(|(kind, _)| *kind == wanted)
+        .filter(|(kind, _)| scan(*kind))
         .map(|(kind, span)| Hit {
             kind: *kind,
             span: span.clone(),
@@ -236,21 +252,71 @@ fn merge(mut hits: Vec<Hit>) -> Vec<Hit> {
     hits
 }
 
-/// The chunked query mode: plan chunks, scan each in this function
-/// (single-threaded today), and merge in ascending start-offset order.
-/// The result MUST equal the sequential scan — the tests pin that
-/// byte-for-byte on seeded corpora. Parallelism is a caller-side
-/// option: the chunk plan and the pure per-chunk scan compose into
-/// worker units, and the deterministic merge does not care about the
-/// completion order.
+/// The chunked query mode (issue 036's "parallel query mode over the
+/// `SoA` chunk plan with deterministic ordered merge"): plan chunks, scan
+/// each on scoped worker threads, and merge in ascending start-offset
+/// order. The result MUST equal the sequential scan — the tests pin
+/// that byte-for-byte on seeded corpora at every fan-out; the workers
+/// own contiguous ascending chunk ranges, so the merge joins per-worker
+/// lists in scan order and does not care about the completion order.
+///
+/// `workers = 0` resolves to [`std::thread::available_parallelism`];
+/// any count caps at the chunk count.
 #[must_use]
 pub fn parallel_query(tokens: &[(u16, Range<u32>)], wanted: u16, workers: usize) -> Vec<Hit> {
+    parallel_query_with(tokens, move |kind| kind == wanted, workers)
+}
+
+/// The chunked query mode with a caller-provided scan predicate (the
+/// general form of [`parallel_query`]'s single-kind scan): every token
+/// kind for which `scan` returns `true` becomes a [`Hit`], merged in
+/// ascending start-offset order — deterministically, at any fan-out.
+///
+/// `workers = 0` resolves to [`std::thread::available_parallelism`];
+/// any count caps at the chunk count (never more workers than work).
+pub fn parallel_query_with<F>(tokens: &[(u16, Range<u32>)], scan: F, workers: usize) -> Vec<Hit>
+where
+    F: Fn(u16) -> bool + Sync,
+{
     let chunks = plan_chunks(tokens, workers);
-    let mut all: Vec<Hit> = Vec::new();
-    for chunk in &chunks {
-        all.extend(scan_chunk(chunk, tokens, wanted));
+    let count = worker_count(workers, chunks.len());
+    let mut hits = Vec::new();
+    if count == 0 {
+        return merge(hits);
     }
-    merge(all)
+    // Contiguous ascending chunk ranges: worker `w` owns chunks
+    // `[first..last)` — the merge below concatenates the per-worker hit
+    // lists in worker order, which is scan order by construction (no
+    // completion-order dependence; the final sort keeps the contract
+    // explicit). The workers share the predicate by reference (`&F` is
+    // `Send` for `F: Sync`).
+    let scan = &scan;
+    std::thread::scope(|scope| {
+        let per = chunks.len() / count;
+        let mut first = 0;
+        let mut handles = Vec::with_capacity(count);
+        for w in 0..count {
+            let last = if w + 1 == count {
+                chunks.len()
+            } else {
+                first + per
+            };
+            let range = &chunks[first..last];
+            handles.push(scope.spawn(move || {
+                range
+                    .iter()
+                    .map(|chunk| scan_chunk(chunk, tokens, scan))
+                    .collect::<Vec<Vec<Hit>>>()
+            }));
+            first = last;
+        }
+        for handle in handles {
+            for chunk_hits in handle.join().expect("query worker never panics") {
+                hits.extend(chunk_hits);
+            }
+        }
+    });
+    merge(hits)
 }
 
 /// The sequential reference: a straight scan.
