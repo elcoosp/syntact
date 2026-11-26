@@ -86,5 +86,9 @@ harness = false
 name = "drive_gate"
 harness = false
 
+[[bench]]
+name = "region_parallel"
+harness = false
+
 [lints]
 workspace = true
