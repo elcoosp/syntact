@@ -100,6 +100,7 @@ cli = { path = "crates/cli" }
 descent = { path = "crates/descent" }
 descent-lower = { path = "crates/descent-lower" }
 generated-json = { path = "crates/generated-json" }
+importer = { path = "crates/importer" }
 incremental = { path = "crates/incremental" }
 query = { path = "crates/query" }
 structural-index = { path = "crates/structural-index" }
