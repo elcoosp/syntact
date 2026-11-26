@@ -118,7 +118,13 @@ mod tests {
     #[test]
     fn identical_streams_have_no_changes() {
         let a = toks("abc", &[1, 2], &[2, 1]);
-        assert_eq!(changed_ranges(&a, "abc", &a, "abc"), vec![]);
+        // Annotated: under workspace-wide feature unification an extra
+        // `Range<usize>: PartialEq` impl (regex_automata's `Span`)
+        // enters the candidate set and `vec![]` alone is ambiguous.
+        assert_eq!(
+            changed_ranges(&a, "abc", &a, "abc"),
+            Vec::<std::ops::Range<usize>>::new()
+        );
     }
 
     #[test]
