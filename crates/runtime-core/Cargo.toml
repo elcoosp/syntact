@@ -8,5 +8,15 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+# Test-only model-checking feature (§12.3 P4 gate: "persistent-red mode
+# loom-clean"): swaps the persistent module's `Arc` for loom's model so
+# the real `RedHandle` participates in the interleaving search. Never
+# enabled by default; run with `cargo test -p runtime-core --features loom`.
+[features]
+loom = ["dep:loom"]
+
+[dependencies]
+loom = { version = "0.7", optional = true }
+
 [lints]
 workspace = true
