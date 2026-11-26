@@ -14,6 +14,10 @@
 //!   [`tree::TreeBuilder`]), byte-faithful rendering, interning.
 //! - [`diagnostic::TokenSet`] + [`diagnostic`] — 192-bit expected sets and the
 //!   diagnostic side table.
+//! - [`persistent`] — versioned red-tree handles with structural sharing and
+//!   the deterministic chunked query mode (issue 036); single-writer /
+//!   multi-reader contract model-checked under the test-only `loom`
+//!   feature (§12.3 P4 gate "persistent-red mode loom-clean").
 //! - [`view`] — green-tree traversal: a [`view::GreenCursor`] and
 //!   [`view::WalkEvent`] iterator, plus the [`view::TreeView`] trait that
 //!   typed-view packs implement (roadmap §16.C.1 typed-views default).
