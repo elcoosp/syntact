@@ -37,6 +37,10 @@
 //!   (roadmap §9.1, ADR-015): convert a `grammar.js` into gir-surface
 //!   KDL through the importer (issue 037), gated to load back through
 //!   `gir-syntax`, with the mapped/dropped/why conversion report.
+//! - `test-all <GRAMMAR.gir> <FILES…>` — the cross-backend differential
+//!   oracle (roadmap §7.4 "Cross-backend oracle", §11.1 #4): descent vs
+//!   the table-driven LR(1) driver over the corpus; the backends must
+//!   agree on every document (`--json` for machine-readable output).
 //!
 //! [`run`] is a pure function from arguments to an exit code, so the
 //! integration tests drive it directly.
@@ -50,6 +54,7 @@ use runtime_core::input::Source;
 
 pub mod import;
 pub mod pgo;
+pub mod testall;
 pub mod trace;
 
 /// The `syntact` command line.
@@ -164,6 +169,21 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Differential-test the descent engine against the table-driven
+    /// LR(1) backend over a corpus through one grammar (roadmap §7.4
+    /// "Cross-backend oracle", §11.1 #4): the backends must agree on
+    /// every document.
+    TestAll {
+        /// The .gir grammar file.
+        #[arg(value_name = "GRAMMAR")]
+        grammar: String,
+        /// Corpus documents to differential-test (`-` reads stdin once).
+        #[arg(value_name = "FILE", num_args = 1..)]
+        files: Vec<String>,
+        /// Emit machine-readable JSON instead of text.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Exit codes: 0 ok, 1 negative verdict, 2 usage/IO error.
@@ -205,6 +225,11 @@ where
             json,
         } => cmd_pgo(&files, pack.as_deref(), out.as_deref(), json),
         Command::Import { file, out, json } => cmd_import(&file, out.as_deref(), json),
+        Command::TestAll {
+            grammar,
+            files,
+            json,
+        } => cmd_testall(&grammar, &files, json),
     })
 }
 
@@ -284,6 +309,102 @@ fn cmd_pgo(files: &[String], pack: Option<&str>, out: Option<&str>, json: bool) 
         }
         Err(error) => {
             eprintln!("{}: {error}", plan.out_dir);
+            USAGE
+        }
+    }
+}
+
+/// Differential-test the descent engine against the table-driven LR(1)
+/// backend over a corpus (roadmap §7.4): the seam plans and runs, the
+/// command reads the grammar and the corpus documents and renders the
+/// verdict — OK when every document agrees on an independent second run.
+fn cmd_testall(grammar_path: &str, files: &[String], json: bool) -> i32 {
+    if files.is_empty() {
+        eprintln!("test-all: no corpus documents given");
+        return USAGE;
+    }
+    let Ok(grammar_text) = read_input(grammar_path) else {
+        return USAGE;
+    };
+    let mut corpus = Vec::with_capacity(files.len());
+    for file in files {
+        match read_input(file) {
+            Ok(source) => corpus.push(testall::CorpusDoc {
+                name: if file == "-" {
+                    "stdin".to_owned()
+                } else {
+                    file.clone()
+                },
+                source,
+            }),
+            Err(error) => {
+                eprintln!("{error}");
+                return USAGE;
+            }
+        }
+    }
+    match testall::run(&grammar_text, &corpus) {
+        Ok(report) => {
+            if json {
+                print!("{}", testall::render_json(&report));
+            } else {
+                println!(
+                    "test-all: grammar `{}` — descent vs table (LR(1)) over {} document(s)",
+                    report.grammar,
+                    report.documents.len()
+                );
+                for document in &report.documents {
+                    let verdict = if document.agree { "ok  " } else { "FAIL" };
+                    print!(
+                        "{verdict} {:<24} {:>5} B {:>4} tokens  ",
+                        document.name, document.bytes, document.tokens
+                    );
+                    if document.descent_valid && document.lr_accepted {
+                        println!("both accept");
+                    } else if !document.descent_valid && !document.lr_accepted {
+                        print!(
+                            "both reject (descent {} error(s); table: ",
+                            document.descent_errors
+                        );
+                        match &document.lr_error {
+                            Some(error) => println!(
+                                "expected {} at byte {})",
+                                error.expected.join(" "),
+                                error.offset
+                            ),
+                            None => println!("rejected)"),
+                        }
+                    } else {
+                        println!(
+                            "DISAGREE (descent errors={}, table accepted={})",
+                            document.descent_errors, document.lr_accepted
+                        );
+                    }
+                }
+                println!(
+                    "verdict: {}/{} agree, {} — the backends {} each other honest",
+                    report.agreements,
+                    report.documents.len(),
+                    if report.deterministic {
+                        "deterministic"
+                    } else {
+                        "NON-DETERMINISTIC"
+                    },
+                    if report.disagreements == 0 {
+                        "keep"
+                    } else {
+                        "do NOT keep"
+                    }
+                );
+            }
+            if report.disagreements == 0 && report.deterministic {
+                OK
+            } else {
+                FAIL
+            }
+        }
+        Err(error) => {
+            eprintln!("{error}");
             USAGE
         }
     }
