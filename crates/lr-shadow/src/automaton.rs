@@ -59,7 +59,7 @@ pub struct Conflict {
 }
 
 /// How a conflict was resolved.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ConflictKind {
     /// Shift/reduce: shift wins (recorded — the shadow automaton flags
     /// ambiguity even where descent codegen can live with it).
@@ -277,8 +277,11 @@ impl Automaton {
 // Construction helpers
 // ---------------------------------------------------------------------------
 
-/// LR(1) closure over a kernel.
-fn closure(
+/// LR(1) closure over a kernel. Crate-internal so the attribution passes
+/// ([`crate::ambiguity`]) can recompute the full item set of a recorded
+/// state — reductions may come from closure items (ε alternatives), which
+/// the stored kernel does not retain.
+pub(crate) fn closure(
     kernel: &BTreeSet<Item>,
     productions: &[Production],
     prods_of: &[Vec<u32>],
