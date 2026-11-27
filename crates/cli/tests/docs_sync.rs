@@ -114,6 +114,18 @@ mod recipe_generated_parser {
         "/../../docs/cookbook/recipes/generated_parser.rs"
     ));
 }
+mod recipe_token_class {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/cookbook/recipes/token_class.rs"
+    ));
+}
+mod recipe_rope_edit {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/cookbook/recipes/rope_edit.rs"
+    ));
+}
 
 // ---------------------------------------------------------------------------
 // 2-4. Book ↔ cookbook sync and link checks.
