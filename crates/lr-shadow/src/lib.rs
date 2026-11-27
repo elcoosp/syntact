@@ -14,11 +14,18 @@
 //!   a deterministic stack machine over the `action`/`goto` tables, the
 //!   table backend the `syntact test-all` oracle differential-tests
 //!   against the descent engine.
+//! - [`token_class`] — token-class inference (roadmap §6.1 pass 7):
+//!   group tokens never distinguished in any parser state (the
+//!   tree-sitter `ts_symbol_map` idea, extended) — the action-column
+//!   equivalence over the resolved table, checked by driver verdict
+//!   preservation under representative substitution.
 
 pub mod automaton;
 pub mod driver;
 pub mod lower;
+pub mod token_class;
 
 pub use automaton::{Action, Automaton, Conflict, ConflictKind, Item, State, StateId};
 pub use driver::{ParseOutcome, StepError, parse};
 pub use lower::{First, Look, Lowered, NontermId, Predicate, ProdKind, Production, Symbol};
+pub use token_class::TokenClasses;
