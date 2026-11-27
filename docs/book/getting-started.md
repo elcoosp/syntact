@@ -94,7 +94,10 @@ call the same `run` function):
 - `syntact build GRAMMAR.gir` — run the front half: IR, lexer DFA, LR(1)
   shadow automaton; prints per-stage stats.
 - `syntact conflicts GRAMMAR.gir` — the determinism report: per-rule
-  backend classification and every LL(1) conflict site.
+  backend classification and every LL(1) conflict site, plus the §6.2
+  ambiguity marks (automaton conflicts attributed to rules, with their
+  two counter-example derivations; `allow-ambiguous="true"` on a rule
+  accepts its ambiguous region as a GLR island candidate).
 - `syntact conformance FILES…` — gate `render(parse(x)) == x` over
   documents.
 - `syntact packs` — list the registered packs: name, language id,
