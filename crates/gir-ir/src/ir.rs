@@ -233,6 +233,12 @@ pub struct Rule {
     pub wrap_error: bool,
     /// Pratt precedence hint (issue 013 lowering; issue 023 backend).
     pub pratt: Option<PrattHint>,
+    /// Ambiguity acceptance (`@allow_ambiguous`, roadmap §6.1 pass 4 /
+    /// §6.2): an annotated rule whose region the shadow automaton marks
+    /// ambiguous classifies as a GLR island candidate instead of plain
+    /// table fallback — the build continues (ADR-007). Unannotated
+    /// ambiguous regions keep the fallback and the error-grade report.
+    pub allow_ambiguous: bool,
     /// Sync tokens: the parser stops consuming and syncs on these during
     /// recovery (issue 016/026).
     pub sync: Vec<TokenId>,
@@ -660,6 +666,7 @@ impl GrammarBuilder {
             fragile: false,
             wrap_error: false,
             pratt: None,
+            allow_ambiguous: false,
             sync: Vec::new(),
             insert: Vec::new(),
         });
@@ -730,6 +737,18 @@ impl GrammarBuilder {
     /// When `id` is out of bounds (not a declared rule).
     pub fn set_pratt(&mut self, id: RuleId, hint: PrattHint) -> &mut Self {
         self.rules[usize::try_from(id.0).expect("rule id in bounds")].pratt = Some(hint);
+        self
+    }
+
+    /// Set the `allow_ambiguous` annotation (`@allow_ambiguous`) on a
+    /// rule: ambiguous regions in the rule's scope classify as GLR island
+    /// candidates instead of table fallback (roadmap §6.2, ADR-007).
+    ///
+    /// # Panics
+    /// When `id` is out of bounds (not a declared rule).
+    pub fn set_allow_ambiguous(&mut self, id: RuleId, allow_ambiguous: bool) -> &mut Self {
+        self.rules[usize::try_from(id.0).expect("rule id in bounds")].allow_ambiguous =
+            allow_ambiguous;
         self
     }
 
