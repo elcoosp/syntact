@@ -6,6 +6,63 @@ the [semver policy](docs/semver-policy.md).
 
 ## [Unreleased]
 
+### The balanced-block fast path — §7.7's second reparse accelerator
+
+- **incremental**: [`Engine::incremental_edit_with_brackets`] — the
+  §7.7 fast path 2 ("small balanced-brace block → re-parse block … fall
+  through to the general engine on mismatch") at the token-stream
+  engine's level: multi-token damage contained in a bracket-balanced
+  block relexes ONLY the smallest enclosing block, with the margin
+  window's predicate discipline carried over (exact tiling, error-free
+  fragment, boundary kind AND text agreement, pair-table balance with
+  interleaved pairs rejected). Every rejection falls through to the
+  full relex — the method is a pure accelerator and [`Engine::
+  incremental_edit`] is now its `&[]` form, so the public surface only
+  grows. Resolves the issue 030 drift honestly: its Work section
+  claimed the balanced-block reparse, but `incremental/src` only ever
+  shipped the margin-window path (grep-evidenced); the plan line now
+  has code, tests, and a bench. Measured (`bench/benches/
+  incremental.rs`, run-fast): the block splice saves ~80× over the
+  fallback on a 256-row document (33 µs vs 2.7 ms per edit).
+  Seeded block-edit fuzz (200 deterministic multi-token edits) keeps
+  the issue 030 equivalence gate: `reparse(edit(x)) == fresh_parse(x)`
+  on every path.
+
+### The cross-backend oracle — `syntact test-all`
+
+- **lr-shadow**: [`driver`] — the table-driven LR(1) runtime (roadmap
+  §7.4's "table-driven LR (O1 tier)" and §7.10's O1 row). Until this
+  seam the shadow automaton was analysis-only: `codegen-rust`'s table
+  emission (issue 015) had no runtime consumer, and §7.4's "cross-backend
+  oracle" had no table backend to compare against. [`parse`] is a
+  deterministic, total stack machine over the automaton's
+  `action`/`goto` tables — shift/reduce/accept with the §7.4
+  expected-set extraction on every rejection (state, offending feed
+  index, sorted expected terminals), and a deterministic step budget
+  (the §7.5 work-budget posture) that turns the ε-reduce/goto cycles a
+  hand-built ε-cyclic table can contain into a rejection instead of a
+  hang. Unit-tested over the kernel-worklist automaton: accept/reject,
+  nullable-start ε derivations, reduce/goto loops, expected-set
+  contents, determinism, the budget.
+- **cli**: [`syntact test-all <GRAMMAR.gir> <FILES…>`]
+  (crates/cli/src/testall.rs) — §7.4's differential oracle and §11.1
+  #4's self-differential as a registry-free library seam plus command:
+  both backends consume the SAME scanner feed (`Lowered::feed`), the
+  descent verdict (a clean derivation, with the nullable-start clause
+  the engine's silent zero-progress close requires) must equal the
+  table verdict (the accept action) on every corpus document. A
+  rejected run reports the table step error by token name; the whole
+  evaluation runs twice (fresh loader → automaton → feeds) and the
+  report refuses to claim determinism unless the second pass reproduces
+  the first (ADR-013 byte-stable JSON via `--json`). Exit codes follow
+  the command convention: 0 agreement, 1 disagreement (one backend
+  mis-classifies the language), 2 usage/IO. Book chapter
+  `docs/book/test-all.md` with the `test_all` recipe compiled by the
+  docs gate; criterion suite `bench/benches/testall.rs` (descent vs
+  table per fixture document); consumer example
+  `crates/cli/examples/testall.rs`
+  (`cargo run -p cli --example testall`); API snapshot regenerated.
+
 ### PGO superinstruction mining — the interpreter's fused token shifts
 
 - **descent**: [`superinstr`] + [`parse_events_with`] — the O3 tier's
