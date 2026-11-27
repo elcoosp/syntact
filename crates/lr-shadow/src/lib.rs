@@ -10,9 +10,15 @@
 //! - [`Automaton`] — canonical LR(1) kernel worklist construction with the
 //!   conflict policy (shift-wins, silent synthetic ε/ε resolution),
 //!   per-state expected sets and reachability.
+//! - [`driver`] — the table-driven LR(1) runtime (roadmap §7.4 O1 tier):
+//!   a deterministic stack machine over the `action`/`goto` tables, the
+//!   table backend the `syntact test-all` oracle differential-tests
+//!   against the descent engine.
 
 pub mod automaton;
+pub mod driver;
 pub mod lower;
 
 pub use automaton::{Action, Automaton, Conflict, ConflictKind, Item, State, StateId};
+pub use driver::{ParseOutcome, StepError, parse};
 pub use lower::{First, Look, Lowered, NontermId, Predicate, ProdKind, Production, Symbol};
