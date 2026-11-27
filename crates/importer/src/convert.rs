@@ -517,6 +517,7 @@ fn rule_decl(name: String, kind: RuleKindSurf, node: bool, pratt: Option<PrattHi
         node,
         reuse: false,
         wrap_error: false,
+        allow_ambiguous: false,
         pratt,
         span: ByteSpan::empty(0),
         name_span: ByteSpan::empty(0),
