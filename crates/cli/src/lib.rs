@@ -589,6 +589,16 @@ fn cmd_build(grammar_path: &str, out: Option<&str>) -> i32 {
         automaton.states.len(),
         automaton.conflicts.len()
     );
+    // Token-class inference (roadmap §6.1 pass 7): the never-
+    // distinguished grouping over the resolved table — declared tokens
+    // no reachable state acts on (dead/reserved tokens) collapse here.
+    let classes = lr_shadow::TokenClasses::compute(&automaton, &grammar);
+    println!(
+        "token classes: {} tokens -> {} classes ({} never distinguished)",
+        classes.token_count(),
+        classes.len(),
+        classes.merged(),
+    );
     let reachable = report
         .verdicts
         .iter()
