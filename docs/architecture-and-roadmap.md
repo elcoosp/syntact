@@ -853,10 +853,20 @@ Assumed: **one senior engineer full-time** (the project owner), with well-parall
 > magnitude: issues 001–046 plus epics 090–094 (see `issues/done/`)
 > shipped the P0–P5 deliverables — both language servers, all ten
 > packs, the importer, the playground, the book, and the 1.0-style API
-> snapshot — between 2026-11-02 and 2026-11-23. The unshipped remainder
-> is the P4 performance-maxima work (region-parallel scanning,
-> superinstruction mining, PGO, `loom`-clean persistent red) and the
-> P5 community/governance tail.
+> snapshot — between 2026-11-02 and 2026-11-23. The P4
+> performance-maxima work this note used to list as unshipped has since
+> landed (2026-11-26/27, grep-evidenced): region-parallel scanning
+> (`structural-index` `parallel`), superinstruction mining
+> (`descent` `superinstr`), the PGO pipeline (`cli` `pgo`), loom-clean
+> persistent red (`runtime-core` `loom` feature + `tests/loom_red.rs`),
+> and the §7.4 cross-backend oracle plus §7.7's balanced-block fast
+> path. Landing in the same change set as this note's correction
+> (2026-11-27): §6.1 pass 7's token-class inference and §7.1/§7.7's
+> ropey input. Still open: §7.4's GLR islands (blocked on the
+> analyzer-side ambiguity marking and `@allow_ambiguous` — neither
+> exists in code) and §7.8's salsa downstream layer (the LSP document
+> model covers derived data without salsa; §16.C.5's default still
+> names it) and the P5 community/governance tail.
 
 ```mermaid
 gantt
