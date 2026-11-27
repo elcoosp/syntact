@@ -6,6 +6,64 @@ the [semver policy](docs/semver-policy.md).
 
 ## [Unreleased]
 
+### Token-class inference — §6.1 pass 7
+
+- **lr-shadow**: [`token_class`] — the pipeline's pass 7 ("group tokens
+  never distinguished in any parser state", the tree-sitter
+  `ts_symbol_map` idea, extended). [`TokenClasses::compute`] reads each
+  token's action column over the resolved LR(1) table (states in
+  discovery order, `Shift`/`Reduce`/`Accept` keyed for equality) and
+  groups identical columns: declared-but-unreferenced tokens (reserved
+  keywords, lexer-only spellings) collapse into one
+  never-distinguished class, used tokens keep their column, and the
+  pseudo-EOF sentinel never enters a class. The extension beyond the
+  upstream map: the grouping is *checked* — same-class tokens are
+  machine-indistinguishable, so mapping a feed to class representatives
+  must preserve the table-driven driver's verdict, pinned end-to-end
+  against [`driver::parse`] (`tests/token_class.rs`: dead-token
+  grouping, distinguished singletons, representative/`class_of`
+  resolution, class ordering, EOF exclusion, driver substitution).
+  Classes order by representative, members keep declaration order, the
+  computation is deterministic for a given `(automaton, grammar)` pair.
+- **cli**: [`syntact build`]'s front-half summary prints the pass-7
+  line — `token classes: N tokens -> M classes (K never
+  distinguished)` — so dead token-table weight is visible at build
+  time. Book chapter `docs/book/token-classes.md` with the
+  `token_class` recipe compiled by the docs gate; criterion suite
+  `bench/benches/token_class.rs`; consumer example
+  `crates/lr-shadow/examples/token_class.rs`
+  (`cargo run -p lr-shadow --example token_class`); API snapshot
+  regenerated.
+
+### Rope input — §7.1's editor integration seam
+
+- **incremental**: [`rope`] — §7.1's "ropey::Rope accepted as an
+  alternative input for editor integrations — the incremental engine
+  consumes rope deltas as edit descriptors (§7.7)". [`edit_between`]
+  derives the engine's [`Edit`] descriptor from a rope state pair (an
+  editor's transition): common character prefix and suffix, the middle
+  span of the new rope as the replacement text — char-aligned by
+  construction, so the text is always a valid `&str`; equal ropes
+  decline with `None` (nothing to classify). [`apply_edit`] closes the
+  §8 "ropey-compatible" loop the other way, applying a descriptor back
+  onto a rope (byte offsets resolved to ropey's character indices once
+  per boundary). The cover is conservative, never wrong: a multi-hunk
+  rope change yields one wide replacement span whose splice still
+  reconstructs the new text exactly, so the engine's fast-path
+  predicates and fallback stay correct — the engine-on-descriptor
+  stream is equivalence-gated against a fresh full lex and against the
+  hand-built string edit (`tests/rope.rs`: insertion, deletion,
+  replacement, multibyte, empty→document and back, round trip, engine
+  equality, the multi-hunk cover). [`Rope`] is re-exported so consumers
+  pin one ropey version through this crate (ADR-012's thin-wrapper
+  posture). The incremental book chapter gains the "Rope input" section
+  with the `rope_edit` recipe compiled by the docs gate; criterion
+  suite `bench/benches/rope_edit.rs` (descriptor derivation + engine
+  run vs the string edit); consumer example
+  `crates/incremental/examples/rope_edit.rs`
+  (`cargo run -p incremental --example rope_edit`); API snapshot
+  regenerated.
+
 ### The balanced-block fast path — §7.7's second reparse accelerator
 
 - **incremental**: [`Engine::incremental_edit_with_brackets`] — the
