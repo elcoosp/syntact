@@ -6,6 +6,41 @@ the [semver policy](docs/semver-policy.md).
 
 ## [Unreleased]
 
+### Analyzer ambiguity marking — §6.1 pass 4 / §6.2 / ADR-007
+
+- **lr-shadow**: [`ambiguity`] — the shadow automaton's recorded
+  conflicts attributed back to GIR rules through production origins
+  ([`ambiguity_marks`]). Each [`AmbiguityMark`] carries the contended
+  terminal (pseudo-EOF included), the resolution kind, the two
+  contending productions (the counter-example derivations §6.2 asks
+  the ambiguity report to carry), and the states where the contention
+  arose. Attribution policy: the first declaring origin of the
+  contending pair; contentions between lowering-synthetic productions
+  (the ε/ε and ε-vs-shift resolutions of `Opt`/`Rep` expansion) stay
+  the lowering's business and never surface as author-facing marks.
+  Output is a deterministic function of the automaton (grouped by
+  `(rule, term, kind)`, sides deduped, states ascending).
+- **gir-analysis**: the determinism report gains the ambiguous verdict
+  — [`Backend::GlrIsland`] plus [`Ambiguity`] entries — through
+  [`DeterminismReport::compute_with_ambiguities`]. Marks propagate to
+  enclosing regions (§6.2 "the automaton restricted to that region"),
+  and the `@allow_ambiguous` annotation reclassifies an annotated
+  table-fallback region as a GLR island candidate so the build
+  continues; unannotated regions keep the fallback and render their
+  two derivations in the report (`ambiguity rule …` / `interp #1:` /
+  `interp #2:` lines).
+- **gir-ir / gir-syntax**: the `@allow_ambiguous` annotation lands as
+  `Rule.allow_ambiguous`, the `allow-ambiguous="true"` surface
+  property, and a canonical-renderer emission — old documents render
+  unchanged (the semver-policy surface freeze).
+- **cli**: `syntact conflicts` reports through the automaton and
+  accepts annotated ambiguous regions (`island candidates: N region(s)
+  accepted (@allow_ambiguous)`); `syntact build`'s summary prints the
+  `ambiguities: N region(s) recorded; islands: M accepted` line when
+  marks exist. Pinned end-to-end: the unannotated ambiguous fixture
+  fails `conflicts` with both derivations rendered, the annotated one
+  passes (`crates/cli/tests/ambiguity.rs`).
+
 ### Token-class inference — §6.1 pass 7
 
 - **lr-shadow**: [`token_class`] — the pipeline's pass 7 ("group tokens
