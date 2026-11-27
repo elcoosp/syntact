@@ -29,6 +29,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/import.rs: pub fn render_json(report: &ImportReport) -> String {
 - src/lib.rs: pub mod import;
 - src/lib.rs: pub mod pgo;
+- src/lib.rs: pub mod testall;
 - src/lib.rs: pub mod trace;
 - src/lib.rs: pub struct Cli {
 - src/lib.rs: pub command: Command,
@@ -52,6 +53,31 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/pgo.rs: pub fn plan(pack: &str, corpus: &[String], out_dir: &str) -> Result<PgoPlan, PgoError> {
 - src/pgo.rs: pub fn emit(plan: &PgoPlan) -> std::io::Result<PgoArtifacts> {
 - src/pgo.rs: pub fn render_json(plan: &PgoPlan) -> String {
+- src/testall.rs: pub struct CorpusDoc {
+- src/testall.rs: pub name: String,
+- src/testall.rs: pub source: String,
+- src/testall.rs: pub enum TestAllError {
+- src/testall.rs: pub struct LrRejection {
+- src/testall.rs: pub state: u32,
+- src/testall.rs: pub offset: u32,
+- src/testall.rs: pub expected: Vec<String>,
+- src/testall.rs: pub struct DocVerdict {
+- src/testall.rs: pub name: String,
+- src/testall.rs: pub bytes: usize,
+- src/testall.rs: pub tokens: usize,
+- src/testall.rs: pub descent_errors: usize,
+- src/testall.rs: pub descent_valid: bool,
+- src/testall.rs: pub lr_accepted: bool,
+- src/testall.rs: pub lr_error: Option<LrRejection>,
+- src/testall.rs: pub agree: bool,
+- src/testall.rs: pub struct TestAllReport {
+- src/testall.rs: pub grammar: String,
+- src/testall.rs: pub documents: Vec<DocVerdict>,
+- src/testall.rs: pub deterministic: bool,
+- src/testall.rs: pub agreements: usize,
+- src/testall.rs: pub disagreements: usize,
+- src/testall.rs: pub fn run(grammar_text: &str, corpus: &[CorpusDoc]) -> Result<TestAllReport, TestAllError> {
+- src/testall.rs: pub fn render_json(report: &TestAllReport) -> String {
 - src/trace.rs: pub struct TraceOp {
 - src/trace.rs: pub op: &'static str,
 - src/trace.rs: pub token: String,
@@ -582,6 +608,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/engine.rs: pub struct Engine<'l> {
 - src/engine.rs: pub lexer: &'l dyn Lexer,
 - src/engine.rs: pub fn incremental_edit(
+- src/engine.rs: pub fn incremental_edit_with_brackets(
 - src/engine.rs: pub fn shift_range(range: &Range<u32>, delta: i64) -> Range<u32> {
 - src/engine.rs: pub fn reused_subtree_bytes(tokens: &[(u16, Range<u32>)], changed: &[Range<usize>]) -> usize {
 - src/lib.rs: pub mod diff;
@@ -737,9 +764,22 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/automaton.rs: pub fn goto(&self, state: StateId, nt: NontermId) -> Option<StateId> {
 - src/automaton.rs: pub fn expected(&self, state: StateId) -> Vec<Look> {
 - src/automaton.rs: pub fn reachable(&self) -> Vec<bool> {
+- src/driver.rs: pub struct StepError {
+- src/driver.rs: pub state: u32,
+- src/driver.rs: pub at: usize,
+- src/driver.rs: pub expected: Vec<Look>,
+- src/driver.rs: pub struct ParseOutcome {
+- src/driver.rs: pub accepted: bool,
+- src/driver.rs: pub consumed: usize,
+- src/driver.rs: pub error: Option<StepError>,
+- src/driver.rs: pub shifts: u64,
+- src/driver.rs: pub reduces: u64,
+- src/driver.rs: pub fn parse(automaton: &Automaton, tokens: &[Look]) -> ParseOutcome {
 - src/lib.rs: pub mod automaton;
+- src/lib.rs: pub mod driver;
 - src/lib.rs: pub mod lower;
 - src/lib.rs: pub use automaton::{Action, Automaton, Conflict, ConflictKind, Item, State, StateId};
+- src/lib.rs: pub use driver::{ParseOutcome, StepError, parse};
 - src/lib.rs: pub use lower::{First, Look, Lowered, NontermId, Predicate, ProdKind, Production, Symbol};
 - src/lower.rs: pub struct Look(pub u32);
 - src/lower.rs: pub const EOF: Self = Self(u32::MAX);
