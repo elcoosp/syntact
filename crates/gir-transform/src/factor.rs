@@ -188,6 +188,7 @@ fn push_helper_rule(grammar: &mut Grammar, base: &str, body: Element) -> RuleId 
         cold: false,
         fragile: false,
         wrap_error: false,
+        allow_ambiguous: false,
         pratt: None,
         sync: Vec::new(),
         insert: Vec::new(),
