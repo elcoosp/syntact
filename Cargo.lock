@@ -122,6 +122,7 @@ dependencies = [
  "descent-lower",
  "dhat",
  "generated-json",
+ "gir-analysis",
  "gir-ir",
  "gir-syntax",
  "incremental",
@@ -477,6 +478,8 @@ name = "gir-analysis"
 version = "1.1.0"
 dependencies = [
  "gir-ir",
+ "gir-syntax",
+ "lr-shadow",
 ]
 
 [[package]]
