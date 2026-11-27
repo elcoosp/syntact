@@ -524,8 +524,9 @@ fn cmd_build(grammar_path: &str, out: Option<&str>) -> i32 {
     };
     // Stage 3: LR(1) shadow automaton.
     let automaton = lr_shadow::Automaton::build(&grammar);
-    // Stage 4: determinism classification.
-    let report = gir_analysis::DeterminismReport::compute(&grammar);
+    // Stage 4: determinism classification, with the §6.2 ambiguity
+    // marks attributed from the automaton's recorded conflicts.
+    let report = gir_analysis::DeterminismReport::compute_with_ambiguities(&grammar, &automaton);
 
     // When `-o <DIR>` is given, emit the compiling parser crate (issue 045,
     // roadmap §6.1 pass 12 / §12.3 P0 "compiling crate" row). Lowering
@@ -605,6 +606,21 @@ fn cmd_build(grammar_path: &str, out: Option<&str>) -> i32 {
         .filter(|verdict| verdict.reachable)
         .count();
     println!("determinism: {reachable} reachable rules classified");
+    // Ambiguity marks (roadmap §6.2, ADR-007): regions the shadow
+    // automaton resolved by policy, with the island candidates the
+    // `@allow_ambiguous` annotation accepted.
+    let islands = report
+        .ambiguities
+        .iter()
+        .filter(|ambiguity| ambiguity.allowed)
+        .count();
+    if !report.ambiguities.is_empty() {
+        println!(
+            "ambiguities: {} region(s) recorded; islands: {} accepted (@allow_ambiguous)",
+            report.ambiguities.len(),
+            islands
+        );
+    }
     OK
 }
 
@@ -615,8 +631,19 @@ fn cmd_conflicts(grammar_path: &str) -> i32 {
     let Ok(grammar) = load_grammar(&text) else {
         return FAIL;
     };
-    let report = gir_analysis::DeterminismReport::compute(&grammar);
+    // The report rides the automaton so ambiguity marks (roadmap §6.2,
+    // ADR-007) render with their two counter-example derivations.
+    let automaton = lr_shadow::Automaton::build(&grammar);
+    let report = gir_analysis::DeterminismReport::compute_with_ambiguities(&grammar, &automaton);
     print!("{report}");
+    let islands = report
+        .ambiguities
+        .iter()
+        .filter(|ambiguity| ambiguity.allowed)
+        .count();
+    if islands > 0 {
+        println!("island candidates: {islands} region(s) accepted (@allow_ambiguous)");
+    }
     if report.all_deterministic() {
         println!("all reachable rules deterministic (descent/pratt)");
         OK
