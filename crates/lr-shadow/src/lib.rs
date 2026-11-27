@@ -19,12 +19,18 @@
 //!   tree-sitter `ts_symbol_map` idea, extended) — the action-column
 //!   equivalence over the resolved table, checked by driver verdict
 //!   preservation under representative substitution.
+//! - [`ambiguity`] — ambiguity marks (roadmap §6.2, ADR-007): recorded
+//!   conflicts attributed back to GIR rules through production origins,
+//!   with the two contending productions the determinism report renders
+//!   as the counter-example derivations.
 
+pub mod ambiguity;
 pub mod automaton;
 pub mod driver;
 pub mod lower;
 pub mod token_class;
 
+pub use ambiguity::{AmbiguityMark, ProductionSide, ambiguity_marks};
 pub use automaton::{Action, Automaton, Conflict, ConflictKind, Item, State, StateId};
 pub use driver::{ParseOutcome, StepError, parse};
 pub use lower::{First, Look, Lowered, NontermId, Predicate, ProdKind, Production, Symbol};
