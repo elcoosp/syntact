@@ -259,6 +259,7 @@ impl<'t> Loader<'t> {
             node: flag(node, "node")?,
             reuse: flag(node, "reuse")?,
             wrap_error: flag(node, "wrap-error")?,
+            allow_ambiguous: flag(node, "allow-ambiguous")?,
             pratt: None,
             span,
             name_span,
