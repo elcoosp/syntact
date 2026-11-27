@@ -11,6 +11,7 @@ authors.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 codegen-rust.workspace = true
+gir-analysis.workspace = true
 descent.workspace = true
 descent-lower.workspace = true
 gir-ir.workspace = true
@@ -114,6 +115,10 @@ harness = false
 
 [[bench]]
 name = "rope_edit"
+harness = false
+
+[[bench]]
+name = "ambiguity"
 harness = false
 
 [lints]
