@@ -186,6 +186,7 @@ All subcommands run against the real pipeline (`crates/cli/src/lib.rs`); exit co
 | `syntact pack-lsp` | The pack language server over stdio for the ten pack languages |
 | `syntact pgo <FILES…> [--pack <PACK>] --out <DIR>` | Emit the PGO pipeline for a pack (roadmap §6.1 pass 13): a deterministic instrument → train → merge → use → bench artifact set over the profile corpus; `--json` for machine-readable output |
 | `syntact import <GRAMMAR.js> [-o <FILE>]` | Convert a tree-sitter `grammar.js` into gir-surface KDL through the importer (issue 037), gated to load back through the loader, with the mapped/dropped/why conversion report; `--json` for machine-readable output |
+| `syntact test-all <GRAMMAR.gir> <FILES…>` | The cross-backend differential oracle (roadmap §7.4): descent vs the table-driven LR(1) driver over the corpus — the backends must agree on every document; rejected runs report the table error state, offset, and expected-token set; `--json` for machine-readable output |
 
 Both servers accept `--max-message` to bound one framed inbound message (default 8 MiB). For editor
 wiring, raw session transcripts, and what each server answers, see the book chapters on the
