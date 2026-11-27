@@ -10,6 +10,7 @@ packs that speak it, and the tooling built on top.
 - [Queries](queries.md)
 - [Recovery](recovery.md)
 - [Generating parser crates](codegen.md)
+- [Token classes](token-classes.md)
 - [The PGO pipeline](pgo.md)
 - [The cross-backend oracle](test-all.md)
 - [Importing tree-sitter grammars](import.md)
