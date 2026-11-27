@@ -76,6 +76,7 @@ impl GirDoc {
             builder.set_node_rule(id, rule.node);
             builder.set_reuse(id, rule.reuse);
             builder.set_wrap_error(id, rule.wrap_error);
+            builder.set_allow_ambiguous(id, rule.allow_ambiguous);
             if let Some(pratt) = rule.pratt {
                 builder.set_pratt(id, pratt);
             }
