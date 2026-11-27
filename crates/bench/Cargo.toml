@@ -13,6 +13,8 @@ criterion.workspace = true
 codegen-rust.workspace = true
 descent.workspace = true
 descent-lower.workspace = true
+gir-ir.workspace = true
+lr-shadow.workspace = true
 dhat.workspace = true
 generated-json.workspace = true
 gir-syntax.workspace = true
@@ -96,6 +98,14 @@ harness = false
 
 [[bench]]
 name = "persistent_query"
+harness = false
+
+[[bench]]
+name = "testall"
+harness = false
+
+[[bench]]
+name = "incremental"
 harness = false
 
 [lints]
