@@ -11,6 +11,7 @@ authors.workspace = true
 [dependencies]
 clap.workspace = true
 codegen-rust.workspace = true
+descent.workspace = true
 descent-lower.workspace = true
 gir-ir.workspace = true
 gir-syntax.workspace = true
