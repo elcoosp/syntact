@@ -177,7 +177,7 @@ All subcommands run against the real pipeline (`crates/cli/src/lib.rs`); exit co
 | Command | What it does |
 |---|---|
 | `syntact check <FILE>` | Validate a `.gir` grammar (KDL to IR) or check a document through the pack its extension selects (`--pack` overrides; stdin defaults to JSON) |
-| `syntact build <GRAMMAR.gir> [-o <DIR>]` | Compile the front half: loader, lexer DFA, LR(1) shadow; prints per-stage stats. With `-o <DIR>`, emit a standalone compiling Rust parser crate (the codegen-rust descent backend) |
+| `syntact build <GRAMMAR.gir> [-o <DIR>]` | Compile the front half: loader, lexer DFA, LR(1) shadow, token-class inference (§6.1 pass 7); prints per-stage stats. With `-o <DIR>`, emit a standalone compiling Rust parser crate (the codegen-rust descent backend) |
 | `syntact conflicts <GRAMMAR.gir>` | Determinism report: per-rule backend classification plus every LL(1) conflict site |
 | `syntact conformance <FILES…> [--pack <PACK>]` | Gate `render(parse(x)) == x` over documents through a registered pack (default `json`) |
 | `syntact packs` | List the registered packs: name, language id, extensions |
@@ -220,14 +220,14 @@ queries, recovery — read [the book](docs/book/SUMMARY.md).
 
 ## Learn more
 
-- [The syntact book](docs/book/SUMMARY.md) — eleven chapters: getting started, the event protocol, the
-  pack walkthrough, incremental reparsing, queries, recovery, codegen, the PGO pipeline, the tree-sitter
-  import wedge, and the two language servers.
+- [The syntact book](docs/book/SUMMARY.md) — twelve chapters: getting started, the event protocol, the
+  pack walkthrough, incremental reparsing, queries, recovery, codegen, token classes, the PGO pipeline,
+  the cross-backend oracle, the tree-sitter import wedge, and the two language servers.
 - [Architecture and roadmap](docs/architecture-and-roadmap.md) — the full design with primary-source
   evidence pointers (oxc, tree-sitter, rust-analyzer, rowan, grmtools, lezer) and architecture decision records.
 - [Cookbook recipes](docs/cookbook/recipes/) — tested, executable examples: parsing, the event stream,
-  incremental reparse, queries, recovery planning, the generated parser, the PGO pipeline, and the
-  tree-sitter import.
+  incremental reparse, rope input, queries, recovery planning, the generated parser, the PGO pipeline,
+  the cross-backend oracle, token classes, and the tree-sitter import.
 - [Semver policy](docs/semver-policy.md) and [API snapshot](docs/api-snapshot.md) — what the 1.0 promise
   covers and the frozen inventory that enforces it.
 - [`crates/cli/src/lib.rs`](crates/cli/src/lib.rs) — the CLI is a pure function from arguments to exit
