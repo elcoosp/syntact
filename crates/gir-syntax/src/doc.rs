@@ -165,6 +165,10 @@ pub struct RuleDecl {
     pub reuse: bool,
     /// Error-wrapping recovery policy (`wrap-error=true`).
     pub wrap_error: bool,
+    /// Ambiguity acceptance (`allow-ambiguous=true`, roadmap §6.2 /
+    /// ADR-007): ambiguous regions in the rule's scope become GLR island
+    /// candidates instead of table fallback.
+    pub allow_ambiguous: bool,
     /// Pratt precedence hint (`lbp=`/`rbp=`/`assoc=` properties).
     pub pratt: Option<PrattHint>,
     /// The whole node span.
