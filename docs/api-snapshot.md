@@ -239,7 +239,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub mod report;
 - src/lib.rs: pub use first_follow::{FirstSet, FirstSets, FollowSets, LookSet};
 - src/lib.rs: pub use ll1::{Conflict, Ll1Verdict, Obstruction};
-- src/lib.rs: pub use report::{Backend, ConflictSite, DeterminismReport, RuleVerdict, left_recursion};
+- src/lib.rs: pub use report::{
 - src/ll1.rs: pub struct Conflict {
 - src/ll1.rs: pub token: TokenId,
 - src/ll1.rs: pub branches: (usize, usize),
@@ -263,7 +263,15 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/report.rs: pub struct DeterminismReport {
 - src/report.rs: pub verdicts: Vec<RuleVerdict>,
 - src/report.rs: pub conflicts: Vec<ConflictSite>,
+- src/report.rs: pub ambiguities: Vec<Ambiguity>,
+- src/report.rs: pub struct Ambiguity {
+- src/report.rs: pub rule: RuleId,
+- src/report.rs: pub term: Option<TokenId>,
+- src/report.rs: pub kind: ConflictKind,
+- src/report.rs: pub allowed: bool,
+- src/report.rs: pub sides: Vec<String>,
 - src/report.rs: pub fn compute(grammar: &Grammar) -> Self {
+- src/report.rs: pub fn compute_with_ambiguities(grammar: &Grammar, automaton: &lr_shadow::Automaton) -> Self {
 - src/report.rs: pub fn backend_for(&self, rule: RuleId) -> Backend {
 - src/report.rs: pub fn all_deterministic(&self) -> bool {
 - src/report.rs: pub fn left_recursion(grammar: &Grammar) -> Vec<bool> {
@@ -308,6 +316,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/ir.rs: pub fragile: bool,
 - src/ir.rs: pub wrap_error: bool,
 - src/ir.rs: pub pratt: Option<PrattHint>,
+- src/ir.rs: pub allow_ambiguous: bool,
 - src/ir.rs: pub sync: Vec<TokenId>,
 - src/ir.rs: pub insert: Vec<TokenId>,
 - src/ir.rs: pub struct Grammar {
@@ -347,6 +356,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/ir.rs: pub fn set_list(&mut self, id: RuleId, list: bool) -> &mut Self {
 - src/ir.rs: pub fn set_wrap_error(&mut self, id: RuleId, wrap_error: bool) -> &mut Self {
 - src/ir.rs: pub fn set_pratt(&mut self, id: RuleId, hint: PrattHint) -> &mut Self {
+- src/ir.rs: pub fn set_allow_ambiguous(&mut self, id: RuleId, allow_ambiguous: bool) -> &mut Self {
 - src/ir.rs: pub fn add_sync(&mut self, id: RuleId, tokens: &[TokenId]) -> &mut Self {
 - src/ir.rs: pub fn set_insert(&mut self, id: RuleId, tokens: Vec<TokenId>) -> &mut Self {
 - src/ir.rs: pub fn seq(elements: Vec<Element>) -> Element {
@@ -402,6 +412,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/doc.rs: pub node: bool,
 - src/doc.rs: pub reuse: bool,
 - src/doc.rs: pub wrap_error: bool,
+- src/doc.rs: pub allow_ambiguous: bool,
 - src/doc.rs: pub pratt: Option<PrattHint>,
 - src/doc.rs: pub span: ByteSpan,
 - src/doc.rs: pub name_span: ByteSpan,
@@ -744,6 +755,17 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 
 ## crates/lr-shadow
 
+- src/ambiguity.rs: pub struct ProductionSide {
+- src/ambiguity.rs: pub origin: Option<RuleId>,
+- src/ambiguity.rs: pub lhs: NontermId,
+- src/ambiguity.rs: pub symbols: Vec<Symbol>,
+- src/ambiguity.rs: pub struct AmbiguityMark {
+- src/ambiguity.rs: pub rule: RuleId,
+- src/ambiguity.rs: pub term: Look,
+- src/ambiguity.rs: pub kind: ConflictKind,
+- src/ambiguity.rs: pub sides: Vec<ProductionSide>,
+- src/ambiguity.rs: pub states: Vec<StateId>,
+- src/ambiguity.rs: pub fn ambiguity_marks(automaton: &Automaton) -> Vec<AmbiguityMark> {
 - src/automaton.rs: pub struct Item {
 - src/automaton.rs: pub prod: u32,
 - src/automaton.rs: pub dot: u32,
@@ -769,6 +791,7 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/automaton.rs: pub fn goto(&self, state: StateId, nt: NontermId) -> Option<StateId> {
 - src/automaton.rs: pub fn expected(&self, state: StateId) -> Vec<Look> {
 - src/automaton.rs: pub fn reachable(&self) -> Vec<bool> {
+- src/automaton.rs: pub(crate) fn closure(
 - src/driver.rs: pub struct StepError {
 - src/driver.rs: pub state: u32,
 - src/driver.rs: pub at: usize,
@@ -780,10 +803,12 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/driver.rs: pub shifts: u64,
 - src/driver.rs: pub reduces: u64,
 - src/driver.rs: pub fn parse(automaton: &Automaton, tokens: &[Look]) -> ParseOutcome {
+- src/lib.rs: pub mod ambiguity;
 - src/lib.rs: pub mod automaton;
 - src/lib.rs: pub mod driver;
 - src/lib.rs: pub mod lower;
 - src/lib.rs: pub mod token_class;
+- src/lib.rs: pub use ambiguity::{AmbiguityMark, ProductionSide, ambiguity_marks};
 - src/lib.rs: pub use automaton::{Action, Automaton, Conflict, ConflictKind, Item, State, StateId};
 - src/lib.rs: pub use driver::{ParseOutcome, StepError, parse};
 - src/lib.rs: pub use lower::{First, Look, Lowered, NontermId, Predicate, ProdKind, Production, Symbol};
