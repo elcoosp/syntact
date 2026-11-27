@@ -108,5 +108,13 @@ harness = false
 name = "incremental"
 harness = false
 
+[[bench]]
+name = "token_class"
+harness = false
+
+[[bench]]
+name = "rope_edit"
+harness = false
+
 [lints]
 workspace = true
