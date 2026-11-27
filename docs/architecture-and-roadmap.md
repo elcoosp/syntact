@@ -862,11 +862,19 @@ Assumed: **one senior engineer full-time** (the project owner), with well-parall
 > and the §7.4 cross-backend oracle plus §7.7's balanced-block fast
 > path. Landing in the same change set as this note's correction
 > (2026-11-27): §6.1 pass 7's token-class inference and §7.1/§7.7's
-> ropey input. Still open: §7.4's GLR islands (blocked on the
-> analyzer-side ambiguity marking and `@allow_ambiguous` — neither
-> exists in code) and §7.8's salsa downstream layer (the LSP document
-> model covers derived data without salsa; §16.C.5's default still
-> names it) and the P5 community/governance tail.
+> ropey input. Landing in the same change set as this note's second
+> correction (2026-11-27): §6.1 pass 4 / §6.2's analyzer-side ambiguity
+> marking and the `@allow_ambiguous` annotation (`lr-shadow`
+> `ambiguity_marks`, `gir-analysis` `Backend::GlrIsland` +
+> `compute_with_ambiguities`, gir-ir/gir-syntax
+> `allow-ambiguous="true"` — grep-evidenced; the annotation acts on
+> table-fallback regions whose automaton conflicts attribute to
+> author-region productions). Still open: §7.4's GLR islands runtime
+> (the analyzer prerequisite above now exists; the island executor —
+> the arena GSS with fork/merge caps and the descent-engine
+> integration — does not) and §7.8's salsa downstream layer (the LSP
+> document model covers derived data without salsa; §16.C.5's default
+> still names it) and the P5 community/governance tail.
 
 ```mermaid
 gantt
