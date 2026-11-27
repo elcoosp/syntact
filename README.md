@@ -178,7 +178,7 @@ All subcommands run against the real pipeline (`crates/cli/src/lib.rs`); exit co
 |---|---|
 | `syntact check <FILE>` | Validate a `.gir` grammar (KDL to IR) or check a document through the pack its extension selects (`--pack` overrides; stdin defaults to JSON) |
 | `syntact build <GRAMMAR.gir> [-o <DIR>]` | Compile the front half: loader, lexer DFA, LR(1) shadow, token-class inference (§6.1 pass 7); prints per-stage stats. With `-o <DIR>`, emit a standalone compiling Rust parser crate (the codegen-rust descent backend) |
-| `syntact conflicts <GRAMMAR.gir>` | Determinism report: per-rule backend classification plus every LL(1) conflict site |
+| `syntact conflicts <GRAMMAR.gir>` | Determinism report: per-rule backend classification, every LL(1) conflict site, and the §6.2 ambiguity marks — automaton conflicts attributed to rules with their two counter-example derivations; `@allow_ambiguous` regions are accepted as GLR island candidates |
 | `syntact conformance <FILES…> [--pack <PACK>]` | Gate `render(parse(x)) == x` over documents through a registered pack (default `json`) |
 | `syntact packs` | List the registered packs: name, language id, extensions |
 | `syntact trace <PACK> <FILE>` | Per-region recovery events (offset, kind, repair ops, resync point) for every registered pack — repair ops for the JSON pack's LR planner, native recovery regions for the other packs; `--json` for machine-readable output |
@@ -220,7 +220,7 @@ queries, recovery — read [the book](docs/book/SUMMARY.md).
 
 ## Learn more
 
-- [The syntact book](docs/book/SUMMARY.md) — twelve chapters: getting started, the event protocol, the
+- [The syntact book](docs/book/SUMMARY.md) — thirteen chapters: getting started, the event protocol, the
   pack walkthrough, incremental reparsing, queries, recovery, codegen, token classes, the PGO pipeline,
   the cross-backend oracle, the tree-sitter import wedge, and the two language servers.
 - [Architecture and roadmap](docs/architecture-and-roadmap.md) — the full design with primary-source
