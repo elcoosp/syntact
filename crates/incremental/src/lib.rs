@@ -36,14 +36,19 @@
 //!    tree granularity — the roadmap §7.7 changed-ranges walk (pairwise
 //!    old/new subtree classification) that downstream invalidation
 //!    consumes; [`DiffVisitor`] is its observability seam.
+//! 7. [`rope`] — the editor-integration input seam (roadmap §7.1): a
+//!    ropey [`Rope`] state pair converts into an [`Edit`] descriptor and
+//!    an [`Edit`] applies back onto a rope ("ropey-compatible", §8).
 
 pub mod diff;
 pub mod edit;
 pub mod engine;
+pub mod rope;
 pub mod tree_diff;
 
 pub use edit::Edit;
 pub use engine::{
     ContextHash, Engine, Lexer, Outcome, Rejection, ReuseCursor, Stats, reused_subtree_bytes,
 };
+pub use rope::Rope;
 pub use tree_diff::{DiffVisitor, RangeCollector, SubtreeVerdict, changed_tree_ranges, diff_trees};
