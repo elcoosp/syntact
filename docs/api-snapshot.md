@@ -614,10 +614,15 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub mod diff;
 - src/lib.rs: pub mod edit;
 - src/lib.rs: pub mod engine;
+- src/lib.rs: pub mod rope;
 - src/lib.rs: pub mod tree_diff;
 - src/lib.rs: pub use edit::Edit;
 - src/lib.rs: pub use engine::{
+- src/lib.rs: pub use rope::Rope;
 - src/lib.rs: pub use tree_diff::{DiffVisitor, RangeCollector, SubtreeVerdict, changed_tree_ranges, diff_trees};
+- src/rope.rs: pub use ropey::Rope;
+- src/rope.rs: pub fn edit_between(old: &Rope, new: &Rope) -> Option<Edit> {
+- src/rope.rs: pub fn apply_edit(rope: &Rope, edit: &Edit) -> Rope {
 - src/tree_diff.rs: pub enum SubtreeVerdict {
 - src/tree_diff.rs: pub trait DiffVisitor {
 - src/tree_diff.rs: pub struct RangeCollector {
@@ -778,9 +783,11 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub mod automaton;
 - src/lib.rs: pub mod driver;
 - src/lib.rs: pub mod lower;
+- src/lib.rs: pub mod token_class;
 - src/lib.rs: pub use automaton::{Action, Automaton, Conflict, ConflictKind, Item, State, StateId};
 - src/lib.rs: pub use driver::{ParseOutcome, StepError, parse};
 - src/lib.rs: pub use lower::{First, Look, Lowered, NontermId, Predicate, ProdKind, Production, Symbol};
+- src/lib.rs: pub use token_class::TokenClasses;
 - src/lower.rs: pub struct Look(pub u32);
 - src/lower.rs: pub const EOF: Self = Self(u32::MAX);
 - src/lower.rs: pub const fn token(id: TokenId) -> Self {
@@ -809,6 +816,15 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lower.rs: pub first: Vec<BTreeSet<Look>>,
 - src/lower.rs: pub fn compute(lowered: &Lowered) -> Self {
 - src/lower.rs: pub fn first_of_suffix(suffix: &[Symbol], la: Look, first: &First) -> BTreeSet<Look> {
+- src/token_class.rs: pub struct TokenClasses {
+- src/token_class.rs: pub fn compute(automaton: &Automaton, grammar: &Grammar) -> Self {
+- src/token_class.rs: pub fn classes(&self) -> &[Vec<TokenId>] {
+- src/token_class.rs: pub fn len(&self) -> usize {
+- src/token_class.rs: pub fn is_empty(&self) -> bool {
+- src/token_class.rs: pub fn class_of(&self, token: TokenId) -> Option<usize> {
+- src/token_class.rs: pub fn representative(&self, token: TokenId) -> Option<TokenId> {
+- src/token_class.rs: pub fn merged(&self) -> usize {
+- src/token_class.rs: pub fn token_count(&self) -> usize {
 
 ## crates/lsp
 
