@@ -114,6 +114,9 @@ fn render_rule(rule: &crate::doc::RuleDecl, out: &mut String) {
     if rule.wrap_error {
         out.push_str(" wrap-error=\"true\"");
     }
+    if rule.allow_ambiguous {
+        out.push_str(" allow-ambiguous=\"true\"");
+    }
     if let Some(pratt) = rule.pratt {
         out.push_str(" lbp=");
         out.push_str(&pratt.left_bp.to_string());
