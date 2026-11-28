@@ -6,6 +6,53 @@ the [semver policy](docs/semver-policy.md).
 
 ## [Unreleased]
 
+### GLR island executor — §7.4 / §12.2 / ADR-007
+
+- **lr-shadow**: [`island`] — the island executor, the runtime for the
+  regions the analyzer marks ambiguous and the still-open half of the
+  plan's §7.4 GLR-islands item ("the island executor — the arena GSS
+  with fork/merge caps and the descent-engine integration — does not",
+  §12.2's status note). [`island::parse`] runs a level-order sweep over
+  the same shadow automaton as the [`driver`]: an arena
+  graph-structured stack whose nodes share parent tails on fork (no
+  per-version stack copies), forks derived from the automaton's recorded
+  conflicts (the table's kept action plus the displaced reductions
+  recomputed from the full item set — synthetic ε/ε resolutions never
+  fork), deterministic merge on equal `(state, position, cost)` — the
+  cheaper derivation survives, equal costs keep the first-discovered
+  node — with a merge that adds a genuinely new parent edge to a
+  settled node re-queued so the enriched graph keeps parsing (this is
+  what unwinds right-recursive lists through the self-goto states a
+  canonical LR(1) build interns once). Fork/merge caps:
+  [`island::MAX_VERSIONS`] (tree-sitter's MAX_VERSION_COUNT bound,
+  prune costliest-first with latest-spawn tie-breaks) and a work-budget
+  step bound (the §7.5 posture — never a wall clock). The outcome is
+  the verdict plus the winning version's derivation
+  ([`IslandRun::ops`]) and the fork/merge statistics — the same
+  verdict-shaped contract [`driver::parse`] hands the oracle.
+  Gates: the shift-wins-resolved table dead-ends on the ambiguous
+  nested-pair derivation while the island accepts it; reduce
+  derivations converging on one goto state merge; determinism
+  (`tests/island.rs`), the version cap changing the verdict when
+  tightened, the step budget, and unambiguous grammars running one
+  linear stack.
+- **descent**: [`island`] — the executor's descent-engine integration:
+  [`island_over_feed`] runs the executor over the ENGINE's own feed
+  contract (the `&[(u16 kind, Range<u32>)]` slice [`parse_events`]
+  consumes) through [`LookMap`], the kind → terminal bridge that mirrors
+  the cross-backend oracle's convention (stranger terminal for scanner-
+  unmatched and trivia kinds). One feed, three backends: the descent
+  verdict, the table verdict, and the island verdict answer over the
+  same tokens — `tests/island.rs` gates the agreement on the JSON
+  fixture (clean engine derivation == table accept == island accept,
+  zero forks) and the rescue on the annotated nested-pair grammar
+  (engine cleanly derives, table dead-ends, island forks and matches
+  the engine).
+- Consumer example `crates/lr-shadow/examples/island_exec.rs`
+  (`cargo run -p lr-shadow --example island_exec`); criterion suite
+  `bench/benches/island.rs` (the JSON linear GSS + the ambiguous
+  fork/unwind fixture); API snapshot regenerated.
+
 ### Analyzer ambiguity marking — §6.1 pass 4 / §6.2 / ADR-007
 
 - **lr-shadow**: [`ambiguity`] — the shadow automaton's recorded
