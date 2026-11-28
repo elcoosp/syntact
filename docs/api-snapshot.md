@@ -174,11 +174,18 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/engine.rs: pub modes: Vec<ModeCrossing>,
 - src/engine.rs: pub fn parse_events(desc: &Desc, feed: &[(u16, Range<u32>)], source: &str) -> Run {
 - src/engine.rs: pub fn parse_events_with(
+- src/island.rs: pub const STRANGER: Look = Look(u32::MAX - 1);
+- src/island.rs: pub struct LookMap {
+- src/island.rs: pub fn of_grammar(kinds: &[u16], trivia: &[bool], bad_kind: u16) -> LookMap {
+- src/island.rs: pub fn of(&self, kind: u16) -> Look {
+- src/island.rs: pub fn island_over_feed(
 - src/lib.rs: pub mod desc;
 - src/lib.rs: pub mod engine;
+- src/lib.rs: pub mod island;
 - src/lib.rs: pub mod superinstr;
 - src/lib.rs: pub use desc::{Desc, InfixDesc, Pat, PrattDesc, RuleDesc, UnaryDesc};
 - src/lib.rs: pub use engine::{ModeCrossing, Run, parse_events, parse_events_with};
+- src/lib.rs: pub use island::{LookMap, STRANGER, island_over_feed};
 - src/lib.rs: pub use superinstr::{SuperEntry, SuperSet, mine};
 - src/lib.rs: pub fn green_tree(
 - src/lib.rs: pub fn stream_is_balanced(run: &Run, source: &str, root_kind: u16) -> bool {
@@ -803,14 +810,37 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/driver.rs: pub shifts: u64,
 - src/driver.rs: pub reduces: u64,
 - src/driver.rs: pub fn parse(automaton: &Automaton, tokens: &[Look]) -> ParseOutcome {
+- src/island.rs: pub const MAX_VERSIONS: usize = 6;
+- src/island.rs: pub const DEFAULT_STEP_BUDGET: u64 = 8_192;
+- src/island.rs: pub struct IslandCaps {
+- src/island.rs: pub max_versions: usize,
+- src/island.rs: pub step_budget: u64,
+- src/island.rs: pub enum IslandOp {
+- src/island.rs: pub enum RejectionReason {
+- src/island.rs: pub struct IslandRejection {
+- src/island.rs: pub at: usize,
+- src/island.rs: pub reason: RejectionReason,
+- src/island.rs: pub expected: Vec<Look>,
+- src/island.rs: pub struct IslandRun {
+- src/island.rs: pub accepted: bool,
+- src/island.rs: pub consumed: usize,
+- src/island.rs: pub ops: Vec<IslandOp>,
+- src/island.rs: pub forks: u64,
+- src/island.rs: pub merges: u64,
+- src/island.rs: pub versions_spawned: u64,
+- src/island.rs: pub pruned: u64,
+- src/island.rs: pub rejection: Option<IslandRejection>,
+- src/island.rs: pub fn parse(automaton: &Automaton, tokens: &[Look], caps: &IslandCaps) -> IslandRun {
 - src/lib.rs: pub mod ambiguity;
 - src/lib.rs: pub mod automaton;
 - src/lib.rs: pub mod driver;
+- src/lib.rs: pub mod island;
 - src/lib.rs: pub mod lower;
 - src/lib.rs: pub mod token_class;
 - src/lib.rs: pub use ambiguity::{AmbiguityMark, ProductionSide, ambiguity_marks};
 - src/lib.rs: pub use automaton::{Action, Automaton, Conflict, ConflictKind, Item, State, StateId};
 - src/lib.rs: pub use driver::{ParseOutcome, StepError, parse};
+- src/lib.rs: pub use island::{IslandCaps, IslandOp, IslandRejection, IslandRun, RejectionReason};
 - src/lib.rs: pub use lower::{First, Look, Lowered, NontermId, Predicate, ProdKind, Production, Symbol};
 - src/lib.rs: pub use token_class::TokenClasses;
 - src/lower.rs: pub struct Look(pub u32);
