@@ -35,6 +35,7 @@ packs-toml.workspace = true
 packs-typescript.workspace = true
 query.workspace = true
 runtime-core.workspace = true
+salsa.workspace = true
 structural-index.workspace = true
 
 [[bench]]
@@ -123,6 +124,14 @@ harness = false
 
 [[bench]]
 name = "island"
+harness = false
+
+[[bench]]
+name = "downstream"
+harness = false
+
+[[bench]]
+name = "partial"
 harness = false
 
 [lints]
