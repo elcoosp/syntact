@@ -1308,7 +1308,9 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub mod diagnostic;
 - src/lib.rs: pub mod events;
 - src/lib.rs: pub mod input;
+- src/lib.rs: pub mod partial;
 - src/lib.rs: pub mod persistent;
+- src/lib.rs: pub mod query;
 - src/lib.rs: pub mod sink;
 - src/lib.rs: pub mod tree;
 - src/lib.rs: pub mod view;
@@ -1317,6 +1319,17 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/lib.rs: pub const ERROR_KIND: NodeKind = u16::MAX - 1;
 - src/lib.rs: pub const MISSING_KIND: NodeKind = u16::MAX - 2;
 - src/lib.rs: pub const EOF_KIND: TokenKind = u16::MAX;
+- src/partial.rs: pub struct PartialEvents {
+- src/partial.rs: pub events: Vec<Event>,
+- src/partial.rs: pub tokens: Vec<Range<u32>>,
+- src/partial.rs: pub resume_offset: u32,
+- src/partial.rs: pub truncated: bool,
+- src/partial.rs: pub struct PartialParse {
+- src/partial.rs: pub tree: Arc<GreenNode>,
+- src/partial.rs: pub resume_offset: u32,
+- src/partial.rs: pub truncated: bool,
+- src/partial.rs: pub fn cut_events(
+- src/partial.rs: pub fn build(
 - src/persistent.rs: pub struct Version {
 - src/persistent.rs: pub number: u64,
 - src/persistent.rs: pub root: Arc<GreenNode>,
@@ -1338,6 +1351,42 @@ Regenerate with `SYNTACT_REGEN_SNAPSHOT=1 cargo test -p cli \
 - src/persistent.rs: pub fn parallel_query(tokens: &[(u16, Range<u32>)], wanted: u16, workers: usize) -> Vec<Hit> {
 - src/persistent.rs: pub fn parallel_query_with<F>(tokens: &[(u16, Range<u32>)], scan: F, workers: usize) -> Vec<Hit>
 - src/persistent.rs: pub fn sequential_query(tokens: &[(u16, Range<u32>)], wanted: u16) -> Vec<Hit> {
+- src/query.rs: pub use salsa::Durability;
+- src/query.rs: pub type ParseFn = fn(&str) -> Result<Arc<GreenNode>, String>;
+- src/query.rs: pub struct ParseFailure {
+- src/query.rs: pub fn message(&self) -> &str {
+- src/query.rs: pub struct SourceFile {
+- src/query.rs: pub text: String,
+- src/query.rs: pub trait DownstreamDb: salsa::Database {
+- src/query.rs: pub fn parse_tree(db: &dyn DownstreamDb, file: SourceFile) -> Result<Arc<GreenNode>, ParseFailure> {
+- src/query.rs: pub struct IndexNode {
+- src/query.rs: pub kind: u16,
+- src/query.rs: pub span: Range<u32>,
+- src/query.rs: pub parent: Option<u32>,
+- src/query.rs: pub first_significant: Option<Range<u32>>,
+- src/query.rs: pub struct Index {
+- src/query.rs: pub nodes: Vec<IndexNode>,
+- src/query.rs: pub fn build(tree: &Arc<GreenNode>, text: &str) -> Self {
+- src/query.rs: pub fn index(db: &dyn DownstreamDb, file: SourceFile) -> Arc<Index> {
+- src/query.rs: pub struct Symbol {
+- src/query.rs: pub kind: u16,
+- src/query.rs: pub range: Range<u32>,
+- src/query.rs: pub name: Option<String>,
+- src/query.rs: pub name_range: Option<Range<u32>>,
+- src/query.rs: pub fn symbols(db: &dyn DownstreamDb, file: SourceFile) -> Arc<Vec<Symbol>> {
+- src/query.rs: pub struct Fold {
+- src/query.rs: pub kind: u16,
+- src/query.rs: pub range: Range<u32>,
+- src/query.rs: pub start_line: u32,
+- src/query.rs: pub end_line: u32,
+- src/query.rs: pub fn folds(db: &dyn DownstreamDb, file: SourceFile) -> Arc<Vec<Fold>> {
+- src/query.rs: pub struct Scope {
+- src/query.rs: pub kind: u16,
+- src/query.rs: pub range: Range<u32>,
+- src/query.rs: pub parent: Option<u32>,
+- src/query.rs: pub struct ScopeTree {
+- src/query.rs: pub scopes: Vec<Scope>,
+- src/query.rs: pub fn scopes(db: &dyn DownstreamDb, file: SourceFile) -> Arc<ScopeTree> {
 - src/sink.rs: pub trait Sink {
 - src/sink.rs: pub fn drive_sink(
 - src/sink.rs: pub struct TriviaRecord {
