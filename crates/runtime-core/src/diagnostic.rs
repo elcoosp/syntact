@@ -69,6 +69,13 @@ impl TokenSet {
     }
 
     /// Iterate the contained kinds ascending.
+    ///
+    /// # Panics
+    /// Never on a `TokenSet` built from its own constructors: the
+    /// 192-bit set caps kinds at 191, inside `u16`. The conversion is
+    /// `expect`ed (not silently defaulted) so a corrupted run — the only
+    /// way this could fire — surfaces loudly instead of aliasing to
+    /// kind 0.
     #[must_use]
     pub fn kinds(&self) -> Vec<u16> {
         let mut out = Vec::new();
@@ -76,7 +83,11 @@ impl TokenSet {
             let mut bits = run;
             while bits != 0 {
                 let bit = bits.trailing_zeros();
-                out.push(u16::try_from(run_idx * 64 + bit as usize).unwrap_or(0));
+                let kind = run_idx * 64 + bit as usize;
+                out.push(
+                    u16::try_from(kind)
+                        .expect("TokenSet kinds fit u16 (the 192-bit set caps at 191)"),
+                );
                 bits &= bits - 1;
             }
         }
