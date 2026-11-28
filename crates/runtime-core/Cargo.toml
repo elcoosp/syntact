@@ -17,6 +17,57 @@ loom = ["dep:loom"]
 
 [dependencies]
 loom = { version = "0.7", optional = true }
+# The §7.8 downstream layer: derived data (symbols, scopes-lite, folds)
+# behind salsa tracked queries (ADR-012 "depend for: salsa").
+salsa.workspace = true
 
-[lints]
-workspace = true
+[dev-dependencies]
+packs-json.workspace = true
+
+# This crate carries an explicit lint table instead of inheriting the
+# workspace one: the §7.8 downstream query module uses salsa 0.28's
+# input-struct macro, whose expansion emits three undocumented `pub`
+# items (`new`, `builder`, and the per-field setter — field-level docs
+# forward to the generated getters only, and salsa master has the same
+# gap, so no version bump fixes it). `missing_docs` therefore relaxes to
+# `allow` for this crate alone. Every item written by hand in
+# `runtime-core` stays documented, and the rest of the table mirrors
+# `[workspace.lints]` verbatim — keep the two in sync.
+[lints.rust]
+missing_docs = "allow"
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+multiple_crate_versions = "allow"
+# Arc<GreenNode>/Arc<NodeCache> event pipelines are single-threaded parser
+# cores by design (rowan-style shared trees); the lint fights the shape.
+arc_with_non_send_sync = "allow"
+# Metric counters and bench timings render as f64; counts stay far below
+# 2^52, so precision loss is display-only.
+cast_precision_loss = "allow"
+# Region offsets and UTF-16 units are u32 by design (issue 032/042); the
+# conversions are bounded by construction.
+cast_possible_truncation = "allow"
+# The IR annotation struct (gir-ir) and the harness gate struct are flat
+# boolean bundles on purpose — each flag is an independent pass datum.
+struct_excessive_bools = "allow"
+# Cohesive state machines and dispatch tables (CLI trace, query compiler,
+# recovery ladder, LSP session stories) read best whole; splitting them
+# would scatter one contract across artificial helpers.
+too_many_lines = "allow"
+# Pack parse entry signatures thread (Arc<GreenNode>, &Source, &mut Sink)
+# plus the closed-over reference parser state — the rowan-style shared-tree
+# return type is the natural shape, not a readability defect (see
+# crates/pack-registry, where the PackEntry shape is defined).
+type_complexity = "allow"
+# The descent engine threads the sync set through recursion — the sync
+# parameter drives recovery depth, which the lint cannot see.
+only_used_in_recursion = "allow"
+# The generated-json crate's DFA tables are machine-generated dense u32
+# sentinels (0xFFFF_FFFF = None); underscore separators would obscure the
+# row structure the codegen emits (issue 045, ADR-013).
+unreadable_literal = "allow"
