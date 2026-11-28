@@ -362,8 +362,10 @@ name = "descent"
 version = "1.1.0"
 dependencies = [
  "descent-lower",
+ "gir-ir",
  "gir-syntax",
  "lexgen",
+ "lr-shadow",
  "packs-json",
  "pretty_assertions",
  "runtime-core",
