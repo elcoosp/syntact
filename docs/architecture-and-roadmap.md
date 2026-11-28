@@ -869,12 +869,16 @@ Assumed: **one senior engineer full-time** (the project owner), with well-parall
 > `compute_with_ambiguities`, gir-ir/gir-syntax
 > `allow-ambiguous="true"` — grep-evidenced; the annotation acts on
 > table-fallback regions whose automaton conflicts attribute to
-> author-region productions). Still open: §7.4's GLR islands runtime
-> (the analyzer prerequisite above now exists; the island executor —
-> the arena GSS with fork/merge caps and the descent-engine
-> integration — does not) and §7.8's salsa downstream layer (the LSP
-> document model covers derived data without salsa; §16.C.5's default
-> still names it) and the P5 community/governance tail.
+> author-region productions). Landing in the same change set as this
+> note's third correction (2026-11-28): §7.4's GLR islands runtime —
+> the island executor (`lr-shadow` `island`: the arena GSS with shared
+> tails on fork, fork/merge caps at `MAX_VERSIONS`, deterministic merge
+> on equal `(state, position, cost)`, work budget) plus the
+> descent-engine integration (`descent` `island_over_feed` over the
+> engine's own feed; grep-evidenced). Still open: §7.8's salsa
+> downstream layer (the LSP document model covers derived data without
+> salsa; §16.C.5's default still names it) and the P5
+> community/governance tail.
 
 ```mermaid
 gantt
