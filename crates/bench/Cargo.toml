@@ -121,5 +121,9 @@ harness = false
 name = "ambiguity"
 harness = false
 
+[[bench]]
+name = "island"
+harness = false
+
 [lints]
 workspace = true
