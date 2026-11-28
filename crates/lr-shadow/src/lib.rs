@@ -23,15 +23,23 @@
 //!   conflicts attributed back to GIR rules through production origins,
 //!   with the two contending productions the determinism report renders
 //!   as the counter-example derivations.
+//! - [`island`] — the GLR island executor (roadmap §7.4, ADR-007): the
+//!   runtime for the regions the analyzer marks ambiguous — the arena
+//!   graph-structured stack with shared tails on fork, fork/merge caps
+//!   (tree-sitter MAX_VERSION_COUNT-style), deterministic merge on equal
+//!   `(state, position, cost)` and a work budget; forks at the recorded
+//!   conflicts and hands back the winning derivation.
 
 pub mod ambiguity;
 pub mod automaton;
 pub mod driver;
+pub mod island;
 pub mod lower;
 pub mod token_class;
 
 pub use ambiguity::{AmbiguityMark, ProductionSide, ambiguity_marks};
 pub use automaton::{Action, Automaton, Conflict, ConflictKind, Item, State, StateId};
 pub use driver::{ParseOutcome, StepError, parse};
+pub use island::{IslandCaps, IslandOp, IslandRejection, IslandRun, RejectionReason};
 pub use lower::{First, Look, Lowered, NontermId, Predicate, ProdKind, Production, Symbol};
 pub use token_class::TokenClasses;
