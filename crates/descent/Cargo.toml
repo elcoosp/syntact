@@ -9,10 +9,12 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+lr-shadow.workspace = true
 runtime-core.workspace = true
 
 [dev-dependencies]
 descent-lower.workspace = true
+gir-ir.workspace = true
 gir-syntax.workspace = true
 lexgen.workspace = true
 packs-json.workspace = true
