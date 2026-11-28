@@ -6,6 +6,90 @@ the [semver policy](docs/semver-policy.md).
 
 ## [Unreleased]
 
+### The downstream query layer — §7.8 / §12.2 p3d / §16.C.5
+
+- **runtime-core**: [`query`] — the salsa downstream layer, the
+  still-open code item of the plan's §12.2 status note ("Still open:
+  §7.8's salsa downstream layer — the LSP document model covers derived
+  data without salsa"). Downstream derived data (symbols, scopes-lite,
+  folds) now lives behind salsa tracked queries over green trees, with
+  durability-tiered file inputs and revision-driven invalidation — the
+  RA/ruff-`ty` pattern §7.8 names, behind ADR-012's "depend for: salsa".
+  [`SourceFile`] is the input: the text is written once through the
+  builder with an explicit [`salsa::Durability`] tier and re-tiered per
+  write through the generated setter — never mutated in place, so
+  invalidation is owned by salsa revisions, not the tree layer. The DB
+  side is the [`DownstreamDb`] trait: the pack's parse entry
+  ([`query::ParseFn`] — the `pack_registry::ParseFn` shape kept
+  structural so the kernel does not depend on the registry) plus the
+  node kinds promoted to each derived product. Queries:
+  [`query::parse_tree`] (the tracked parse, LRU 128 — the RA value
+  §2.3 cites; the pack's structural `Err` surfaces as
+  [`query::ParseFailure`]), [`query::index`] (one DFS per text version:
+  positioned nodes with parent links and first-significant-token
+  spans), and the filters over that memoized layer — [`query::symbols`]
+  (named by the first significant token, the pack LSP outline's rule),
+  [`query::folds`] (line bounds through the input layer's line index),
+  [`query::scopes`] (the scopes-lite tree: nearest scope-kind ancestor
+  parents, document order). Cross-file isolation is the §7.8 sentence
+  verbatim, gated in `crates/runtime-core/tests/query_downstream.rs`:
+  editing file A recomputes A and leaves file B's memoized query
+  untouched (returned `Arc` identity unchanged); input writes bump the
+  revision unconditionally (no value dedup in salsa's setter — same
+  text, same derived data, fresh computation). The editor-shaped
+  consumer of the same derived data remains the pack LSP's document
+  model; this module is the programmatic seam. Salsa 0.28.2 is pinned
+  by its own `rust-version = 1.85` — the workspace MSRV holds. Note:
+  `runtime-core` now carries an explicit `[lints]` table (mirroring the
+  workspace one) because salsa 0.28's input-struct macro emits three
+  undocumented `pub` items (`new`, `builder`, the field setter — field
+  docs forward to getters only, and salsa master has the same gap), so
+  `missing_docs` relaxes to `allow` for this crate alone; every
+  hand-written item stays documented.
+- Consumer example `crates/runtime-core/examples/downstream_query.rs`
+  (`cargo run -p runtime-core --example downstream_query`); criterion
+  suite `crates/bench/benches/downstream.rs` (cold parse/derive,
+  memoized re-query, and the revision-driven recompute after an edit);
+  API snapshot regenerated.
+
+### Viewport parsing — §8 `parse_partial` / §2.8 / the mode glossary
+
+- **runtime-core**: [`partial`] — the `parse_partial` seam of the §8
+  API sketch ("lezer stopAt analogue"), the mode the glossary lists and
+  the §12.3 P3 gate asks to "work": viewport parsing over the event
+  protocol. The event stream makes the viewport a stream-level
+  transform rather than a parser mode: [`partial::cut_events`] cuts a
+  pack's raw event stream at a visible-end offset — every token beyond
+  the viewport drops, the still-open `Start`s close with synthesized
+  `Finish` events so the truncated stream stays `process()`able, and
+  the open count mirrors `process`'s forward-parent flattening (a
+  chain folds into ONE node; hops do not open their own). The cut
+  never splits a forward-parent chain (the §2.3 precede wrap): when a
+  kept `Start`'s chain target lies beyond the natural cut, the cut
+  extends past the target, keeping the crossing token with it.
+  [`partial::build`] wraps the cut in the caller's pack-conventional
+  root, slices the trivia records to the covered prefix (a record
+  ending exactly at the resume offset survives — the trailing-space
+  convention), and drives the tree builder over the sliced source, so
+  the partial tree renders the covered prefix byte-for-byte with the
+  builder's zero-width EOF landing at the resume point.
+  [`PartialParse::resume_offset`] names the first token beyond the
+  viewport — the point an editor's next viewport pass resumes from.
+  Gates in `crates/runtime-core/tests/partial_viewport.rs`: the prefix
+  render, the full-viewport cut reproducing the fresh parse exactly
+  (tree equality with the pack's `parse`), mid-token resumes, the
+  empty viewport, the chain-extension cut, and trivia byte-faithfulness.
+- Consumer example `crates/runtime-core/examples/partial_viewport.rs`
+  (`cargo run -p runtime-core --example partial_viewport`); criterion
+  suite `crates/bench/benches/partial.rs` (quarter/half/three-quarter/
+  full cut points — the transform is linear in the kept prefix); API
+  snapshot regenerated.
+- **runtime-core**: micro-debt — [`diagnostic::TokenSet::kinds`] no
+  longer silently aliases an impossible overflow to kind 0
+  (`unwrap_or(0)` → documented `expect`; the 192-bit set caps kinds at
+  191, inside `u16`, so the default was unreachable and, if it ever
+  fired, wrong data).
+
 ### GLR island executor — §7.4 / §12.2 / ADR-007
 
 - **lr-shadow**: [`island`] — the island executor, the runtime for the
