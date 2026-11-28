@@ -7,6 +7,10 @@
 //!   [`events::Output`] streams, and [`events::process`] validation.
 //! - [`input`] — the [`input::Source`] input layer (line index, byte-accurate
 //!   positions, u32 length guard).
+//! - [`partial`] — viewport parsing over the event protocol (§8's
+//!   `parse_partial`, the lezer `stopAt` analogue): a stream-level cut at a
+//!   visible-end offset that keeps the truncated stream well-formed and
+//!   builds the byte-faithful prefix tree, with the resume point named.
 //! - [`sink`] — the [`sink::Sink`] consumer trait ([`sink::drive_sink`], the
 //!   gated [`sink::drive_sink_until`] driver), the validate/scan/skeleton
 //!   mode sinks, and trivia records (ADR-008).
@@ -19,6 +23,11 @@
 //!   the chunk plan, deterministic ordered merge); single-writer /
 //!   multi-reader contract model-checked under the test-only `loom`
 //!   feature (§12.3 P4 gate "persistent-red mode loom-clean").
+//! - [`query`] — the downstream derived-data layer (roadmap §7.8): salsa
+//!   tracked queries over green trees (`parse_tree`, positioned index,
+//!   symbols, folds, scopes-lite) behind durability-tiered file inputs —
+//!   cross-file invalidation comes from salsa revisions, not the tree
+//!   layer.
 //! - [`view`] — green-tree traversal: a [`view::GreenCursor`] and
 //!   [`view::WalkEvent`] iterator, plus the [`view::TreeView`] trait that
 //!   typed-view packs implement (roadmap §16.C.1 typed-views default).
@@ -26,7 +35,9 @@
 pub mod diagnostic;
 pub mod events;
 pub mod input;
+pub mod partial;
 pub mod persistent;
+pub mod query;
 pub mod sink;
 pub mod tree;
 pub mod view;
