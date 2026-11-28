@@ -35,11 +35,22 @@
 //! corpora (the data-driven synthesis of §1.3 #16) into a
 //! [`superinstr::SuperSet`]; [`parse_events_with`] runs the engine with
 //! the table so hot token-shift runs execute as one fused dispatch.
-//! The fused output is conformance-gated to equal [`parse_events`]'s
-//! run byte for byte.
+//! The fused output is conformance-gated to equal [`parse_events`]'s run
+//! byte for byte.
+//!
+//! ## GLR islands over the feed (§7.4, §12.2)
+//!
+//! [`island`] is the GLR island executor's descent-engine integration:
+//! the executor (`lr-shadow::island` — the arena GSS with fork/merge
+//! caps) rides this engine's own feed contract through a
+//! [`island::LookMap`], so the descent verdict, the table verdict and the
+//! island verdict all answer over ONE token stream. Islands are selected
+//! at compile time only (ADR-007): the analyzer's `@allow_ambiguous`
+//! marks the regions; the executor runs them at runtime.
 
 pub mod desc;
 pub mod engine;
+pub mod island;
 pub mod superinstr;
 
 use std::ops::Range;
@@ -52,6 +63,7 @@ use runtime_core::tree::{GreenNode, NodeCache, TreeBuilder};
 
 pub use desc::{Desc, InfixDesc, Pat, PrattDesc, RuleDesc, UnaryDesc};
 pub use engine::{ModeCrossing, Run, parse_events, parse_events_with};
+pub use island::{LookMap, STRANGER, island_over_feed};
 pub use superinstr::{SuperEntry, SuperSet, mine};
 
 /// Wrap a run's events in one implicit root and drive them through the
