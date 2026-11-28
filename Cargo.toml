@@ -127,6 +127,7 @@ serde_json = "1.0.154"
 criterion = "0.8.2"
 dhat = "0.3.3"
 pretty_assertions = "1.4.1"
+salsa = "0.28.2"
 
 [profile.release]
 lto = "thin"
